@@ -1,0 +1,312 @@
+// controllers/examController.js
+const pool = require("../db");
+const csv = require("csv-parser");
+const { Readable } = require("stream");
+const { filterByHallScope, canAccessHall } = require("../utils/hallScope");
+
+// ─────────────────────────────────────────────
+// HELPER — auto update exam statuses based on time
+// ─────────────────────────────────────────────
+async function autoUpdateStatuses() {
+  const now = new Date();
+  await pool.query(
+    `UPDATE exams SET status = 'active'
+     WHERE status = 'scheduled'
+     AND start_time <= $1
+     AND end_time > $1`,
+    [now]
+  );
+  await pool.query(
+    `UPDATE exams SET status = 'ended'
+     WHERE status = 'active'
+     AND end_time <= $1`,
+    [now]
+  );
+}
+
+// ─────────────────────────────────────────────
+// GET ALL EXAMS
+// ─────────────────────────────────────────────
+async function getAllExams(req, res) {
+  try {
+    console.log("[scope] exams", { role: req.user?.role, hallIds: req.user?.hallIds || [] });
+    await autoUpdateStatuses();
+    const result = await pool.query(
+      `SELECT e.*, eh.hall_number, eh.location
+       FROM exams e
+       LEFT JOIN exam_halls eh ON e.hall_id = eh.id
+       ORDER BY e.date ASC, e.start_time ASC`
+    );
+    const filtered = filterByHallScope(result.rows, req.user);
+    console.log("[scope] exams results", { before: result.rows.length, after: filtered.length });
+    res.json({ exams: filtered });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// GET SINGLE EXAM
+// ─────────────────────────────────────────────
+async function getExamById(req, res) {
+  const { id } = req.params;
+  try {
+    await autoUpdateStatuses();
+    const result = await pool.query(
+      `SELECT e.*, eh.hall_number, eh.location
+       FROM exams e
+       LEFT JOIN exam_halls eh ON e.hall_id = eh.id
+       WHERE e.id = $1`,
+      [id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Exam not found" });
+    if (!canAccessHall(req.user, result.rows[0].hall_id)) {
+      return res.status(404).json({ error: "Exam not found" });
+    }
+    res.json({ exam: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// CREATE EXAM (MANUAL)
+// ─────────────────────────────────────────────
+async function createExam(req, res) {
+  const { name, subject, date, start_time, end_time, hall_id } = req.body;
+
+  if (!name || !date || !start_time || !end_time) {
+    return res.status(400).json({ error: "name, date, start_time and end_time are required" });
+  }
+
+  if (new Date(start_time) >= new Date(end_time)) {
+    return res.status(400).json({ error: "start_time must be before end_time" });
+  }
+
+  try {
+    if (hall_id) {
+      // Check hall exists
+      const hall = await pool.query("SELECT id FROM exam_halls WHERE id = $1", [hall_id]);
+      if (!hall.rows[0]) return res.status(404).json({ error: "Exam hall not found" });
+
+      // Check overlap
+      const overlap = await pool.query(
+        `SELECT id, name FROM exams
+         WHERE hall_id = $1
+         AND status != 'ended'
+         AND start_time < $3
+         AND end_time > $2`,
+        [hall_id, start_time, end_time]
+      );
+      if (overlap.rows[0]) {
+        return res.status(409).json({
+          error: `Hall already booked for '${overlap.rows[0].name}' during that time`
+        });
+      }
+    }
+
+    const result = await pool.query(
+      `INSERT INTO exams (name, subject, date, start_time, end_time, status, hall_id)
+       VALUES ($1, $2, $3, $4, $5, 'scheduled', $6)
+       RETURNING *`,
+      [name, subject || null, date, start_time, end_time, hall_id || null]
+    );
+
+    res.status(201).json({ message: "Exam created", exam: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// UPDATE EXAM
+// Only updates fields that are sent
+// ─────────────────────────────────────────────
+async function updateExam(req, res) {
+  const { id } = req.params;
+  const { name, subject, date, start_time, end_time, hall_id } = req.body;
+
+  try {
+    const existing = await pool.query("SELECT * FROM exams WHERE id = $1", [id]);
+    if (!existing.rows[0]) return res.status(404).json({ error: "Exam not found" });
+
+    const newStart = start_time || existing.rows[0].start_time;
+    const newEnd = end_time || existing.rows[0].end_time;
+
+    if (new Date(newStart) >= new Date(newEnd)) {
+      return res.status(400).json({ error: "start_time must be before end_time" });
+    }
+
+    if (hall_id) {
+      // Check hall exists
+      const hall = await pool.query("SELECT id FROM exam_halls WHERE id = $1", [hall_id]);
+      if (!hall.rows[0]) return res.status(404).json({ error: "Exam hall not found" });
+
+      // Check overlap — exclude current exam from check
+      const overlap = await pool.query(
+        `SELECT id, name FROM exams
+         WHERE hall_id = $1
+         AND id != $4
+         AND status != 'ended'
+         AND start_time < $3
+         AND end_time > $2`,
+        [hall_id, newStart, newEnd, id]
+      );
+      if (overlap.rows[0]) {
+        return res.status(409).json({
+          error: `Hall already booked for '${overlap.rows[0].name}' during that time`
+        });
+      }
+    }
+
+    const fields = [];
+    const values = [];
+    let counter = 1;
+
+    if (name)       { fields.push(`name = $${counter++}`);       values.push(name); }
+    if (subject)    { fields.push(`subject = $${counter++}`);    values.push(subject); }
+    if (date)       { fields.push(`date = $${counter++}`);       values.push(date); }
+    if (start_time) { fields.push(`start_time = $${counter++}`); values.push(start_time); }
+    if (end_time)   { fields.push(`end_time = $${counter++}`);   values.push(end_time); }
+    if (hall_id)    { fields.push(`hall_id = $${counter++}`);    values.push(hall_id); }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: "No fields provided to update" });
+    }
+
+    values.push(id);
+    const query = `UPDATE exams SET ${fields.join(", ")} WHERE id = $${counter} RETURNING *`;
+
+    const result = await pool.query(query, values);
+    res.json({ message: "Exam updated", exam: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// DELETE EXAM
+// ─────────────────────────────────────────────
+async function deleteExam(req, res) {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      "DELETE FROM exams WHERE id = $1 RETURNING id, name",
+      [id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Exam not found" });
+    res.json({ message: `Exam '${result.rows[0].name}' deleted successfully` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// MANUAL STATUS CHECK + UPDATE
+// ─────────────────────────────────────────────
+async function checkAndUpdateExamStatuses(req, res) {
+  try {
+    await autoUpdateStatuses();
+    res.json({ message: "Exam statuses updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ─────────────────────────────────────────────
+// UPLOAD CSV
+// CSV format: name,subject,date,start_time,end_time,hall_id
+// date format: YYYY-MM-DD
+// time format: YYYY-MM-DD HH:MM:SS
+// ─────────────────────────────────────────────
+async function uploadExamCSV(req, res) {
+  if (!req.file) return res.status(400).json({ error: "No CSV file uploaded" });
+
+  const results = [];
+  const errors = [];
+
+  const stream = Readable.from(req.file.buffer.toString());
+
+  await new Promise((resolve, reject) => {
+    stream
+      .pipe(csv())
+      .on("data", (row) => results.push(row))
+      .on("end", resolve)
+      .on("error", reject);
+  });
+
+  if (results.length === 0) {
+    return res.status(400).json({ error: "CSV is empty or invalid" });
+  }
+
+  const created = [];
+
+  for (const row of results) {
+    const name       = row.name?.trim();
+    const subject    = row.subject?.trim();
+    const date       = row.date?.trim();
+    const start_time = row.start_time?.trim();
+    const end_time   = row.end_time?.trim();
+    const hall_id    = row.hall_id?.trim() || null;
+
+    if (!name || !date || !start_time || !end_time) {
+      errors.push({ row, reason: "Missing name, date, start_time or end_time" });
+      continue;
+    }
+
+    if (new Date(start_time) >= new Date(end_time)) {
+      errors.push({ row, reason: "start_time must be before end_time" });
+      continue;
+    }
+
+    try {
+      // Check overlap for CSV too
+      if (hall_id) {
+        const overlap = await pool.query(
+          `SELECT id, name FROM exams
+           WHERE hall_id = $1
+           AND status != 'ended'
+           AND start_time < $3
+           AND end_time > $2`,
+          [hall_id, start_time, end_time]
+        );
+        if (overlap.rows[0]) {
+          errors.push({ row, reason: `Hall already booked for '${overlap.rows[0].name}' during that time` });
+          continue;
+        }
+      }
+
+      const result = await pool.query(
+        `INSERT INTO exams (name, subject, date, start_time, end_time, status, hall_id)
+         VALUES ($1, $2, $3, $4, $5, 'scheduled', $6)
+         RETURNING *`,
+        [name, subject || null, date, start_time, end_time, hall_id]
+      );
+      created.push(result.rows[0]);
+    } catch (err) {
+      errors.push({ row, reason: err.message });
+    }
+  }
+
+  res.status(201).json({
+    message: `${created.length} exam(s) created, ${errors.length} skipped`,
+    created,
+    errors,
+  });
+}
+
+module.exports = {
+  getAllExams,
+  getExamById,
+  createExam,
+  updateExam,
+  deleteExam,
+  uploadExamCSV,
+  checkAndUpdateExamStatuses,
+};
