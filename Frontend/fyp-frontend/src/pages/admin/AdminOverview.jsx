@@ -14,8 +14,15 @@ const alertStatusVariant     = { pending: "warning", reviewed: "success" };
 const fmt = (ts) => (ts ? new Date(ts).toLocaleString() : "—");
 
 export default function AdminOverview() {
-  const user = getCurrentUser() || { name: "Admin", id: "admin", role: "admin" };
-  const [stats, setStats]         = useState(null);
+const user = getCurrentUser() || {};
+const [stats, setStats] = useState({
+  totalInvigilators: 0,
+  totalExams: 0,
+  totalExamHalls: 0,
+  totalCameras: 0,
+  totalSpeakers: 0,
+  totalMicrophones: 0,
+});
   const [violations, setViolations] = useState([]);
   const [alerts, setAlerts]       = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -26,9 +33,16 @@ export default function AdminOverview() {
         const [s, v, a] = await Promise.all([
           api.getAdminDashboardStats(),
           api.getViolations(),
-          api.getAlerts(),
+          api.getAiAlerts(),
         ]);
-        setStats(s);
+        setStats(s || {
+  totalInvigilators: 0,
+  totalExams: 0,
+  totalExamHalls: 0,
+  totalCameras: 0,
+  totalSpeakers: 0,
+  totalMicrophones: 0,
+});
         setViolations(v.slice(0, 5));
         setAlerts(a.slice(0, 5));
       } catch (e) {
@@ -39,8 +53,11 @@ export default function AdminOverview() {
     })();
   }, []);
 
-  return (
-    <DashboardLayout userRole={user.role} userName={user.name} userId={user.id} pageTitle="Overview">
+  return (<DashboardLayout  userRole={user?.role || "admin"}
+  userName={user?.name || "Admin"}
+  userId={user?.id || "admin"}
+  pageTitle="Overview">
+    
       {loading ? (
         <LoadingSpinner />
       ) : (

@@ -8,20 +8,30 @@ const { filterByHallScope, canAccessHall } = require("../utils/hallScope");
 // HELPER — auto update exam statuses based on time
 // ─────────────────────────────────────────────
 async function autoUpdateStatuses() {
-  const now = new Date();
   await pool.query(
     `UPDATE exams SET status = 'active'
      WHERE status = 'scheduled'
-     AND start_time <= $1
-     AND end_time > $1`,
-    [now]
+     AND date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::date
+     AND start_time <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::time
+     AND end_time > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::time`
   );
   await pool.query(
     `UPDATE exams SET status = 'ended'
      WHERE status = 'active'
-     AND end_time <= $1`,
-    [now]
+     AND (
+       date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::date
+       OR (
+         date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::date
+         AND end_time <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Karachi')::time
+       )
+     )`
   );
+}
+
+function timeToMinutes(value) {
+  const match = String(value ?? "").match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return NaN;
+  return Number(match[1]) * 60 + Number(match[2]) + Number(match[3] || 0) / 60;
 }
 
 // ─────────────────────────────────────────────
@@ -81,7 +91,7 @@ async function createExam(req, res) {
     return res.status(400).json({ error: "name, date, start_time and end_time are required" });
   }
 
-  if (new Date(start_time) >= new Date(end_time)) {
+  if (!(timeToMinutes(start_time) < timeToMinutes(end_time))) {
     return res.status(400).json({ error: "start_time must be before end_time" });
   }
 
@@ -95,10 +105,11 @@ async function createExam(req, res) {
       const overlap = await pool.query(
         `SELECT id, name FROM exams
          WHERE hall_id = $1
+         AND date = $4
          AND status != 'ended'
          AND start_time < $3
          AND end_time > $2`,
-        [hall_id, start_time, end_time]
+        [hall_id, start_time, end_time, date]
       );
       if (overlap.rows[0]) {
         return res.status(409).json({
@@ -135,8 +146,9 @@ async function updateExam(req, res) {
 
     const newStart = start_time || existing.rows[0].start_time;
     const newEnd = end_time || existing.rows[0].end_time;
+    const newDate = date || existing.rows[0].date;
 
-    if (new Date(newStart) >= new Date(newEnd)) {
+    if (!(timeToMinutes(newStart) < timeToMinutes(newEnd))) {
       return res.status(400).json({ error: "start_time must be before end_time" });
     }
 
@@ -149,11 +161,12 @@ async function updateExam(req, res) {
       const overlap = await pool.query(
         `SELECT id, name FROM exams
          WHERE hall_id = $1
-         AND id != $4
+         AND date = $4
+         AND id != $5
          AND status != 'ended'
          AND start_time < $3
          AND end_time > $2`,
-        [hall_id, newStart, newEnd, id]
+        [hall_id, newStart, newEnd, newDate, id]
       );
       if (overlap.rows[0]) {
         return res.status(409).json({
@@ -223,7 +236,7 @@ async function checkAndUpdateExamStatuses(req, res) {
 // UPLOAD CSV
 // CSV format: name,subject,date,start_time,end_time,hall_id
 // date format: YYYY-MM-DD
-// time format: YYYY-MM-DD HH:MM:SS
+// time format: HH:MM or HH:MM:SS
 // ─────────────────────────────────────────────
 async function uploadExamCSV(req, res) {
   if (!req.file) return res.status(400).json({ error: "No CSV file uploaded" });
@@ -260,7 +273,7 @@ async function uploadExamCSV(req, res) {
       continue;
     }
 
-    if (new Date(start_time) >= new Date(end_time)) {
+    if (!(timeToMinutes(start_time) < timeToMinutes(end_time))) {
       errors.push({ row, reason: "start_time must be before end_time" });
       continue;
     }
@@ -271,10 +284,11 @@ async function uploadExamCSV(req, res) {
         const overlap = await pool.query(
           `SELECT id, name FROM exams
            WHERE hall_id = $1
+           AND date = $4
            AND status != 'ended'
            AND start_time < $3
            AND end_time > $2`,
-          [hall_id, start_time, end_time]
+          [hall_id, start_time, end_time, date]
         );
         if (overlap.rows[0]) {
           errors.push({ row, reason: `Hall already booked for '${overlap.rows[0].name}' during that time` });

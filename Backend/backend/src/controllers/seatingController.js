@@ -1,5 +1,11 @@
 const pool = require("../db");
 
+function badRequest(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
 async function saveSeatingPlan(req, res) {
   const halls = Array.isArray(req.body?.halls) ? req.body.halls : [];
 
@@ -14,23 +20,29 @@ async function saveSeatingPlan(req, res) {
 
     for (const hall of halls) {
       const hallId = Number(hall.id);
-      if (!Number.isFinite(hallId) || !Array.isArray(hall.seats)) continue;
+      if (!Number.isFinite(hallId) || !Array.isArray(hall.seats)) {
+        throw badRequest("valid hall_id and seats are required");
+      }
 
       const examId = Number(hall.examId ?? hall.exam_id);
-      const targetExamId = Number.isFinite(examId) ? examId : null;
+      if (!Number.isFinite(examId)) {
+        throw badRequest("valid exam_id is required");
+      }
+
+      const exam = await client.query(
+        "SELECT id FROM exams WHERE id = $1 AND hall_id = $2",
+        [examId, hallId]
+      );
+      if (!exam.rows[0]) {
+        throw badRequest("exam_id must belong to selected hall_id");
+      }
+
       const assignedStudentIds = new Set();
 
-      if (targetExamId === null) {
-        await client.query(
-          "DELETE FROM seat_allocations WHERE hall_id = $1 AND exam_id IS NULL",
-          [hallId]
-        );
-      } else {
-        await client.query(
-          "DELETE FROM seat_allocations WHERE hall_id = $1 AND exam_id = $2",
-          [hallId, targetExamId]
-        );
-      }
+      await client.query(
+        "DELETE FROM seat_allocations WHERE hall_id = $1 AND exam_id = $2",
+        [hallId, examId]
+      );
 
       for (let rowIndex = 0; rowIndex < hall.seats.length; rowIndex += 1) {
         const row = hall.seats[rowIndex];
@@ -50,7 +62,7 @@ async function saveSeatingPlan(req, res) {
               (hall_id, student_id, row_number, column_number, exam_id)
             VALUES ($1, $2, $3, $4, $5)
             `,
-            [hallId, studentId, rowIndex + 1, colIndex + 1, targetExamId]
+            [hallId, studentId, rowIndex + 1, colIndex + 1, examId]
           );
         }
       }
@@ -61,7 +73,7 @@ async function saveSeatingPlan(req, res) {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).json({ error: "Failed to save seating plan" });
+    res.status(err.status || 500).json({ error: err.status ? err.message : "Failed to save seating plan" });
   } finally {
     client.release();
   }

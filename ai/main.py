@@ -1,83 +1,112 @@
 import cv2
-import numpy as np
+import time
 
-from recognition import app
-from load_embeddings import load_students
+from attendance import mark_attendance
+from seating import verify_seating
+from cheating import detect_cheating
+from whisper import start_whisper_detection
 
-# Load students + embeddings
-student_names, known_embeddings = load_students()
 
-print("Students loaded:", len(student_names))
+HALL_ID = 1
+EXAM_ID = 1
 
-if len(known_embeddings) == 0:
-    print("No embeddings found in database")
-    exit()
+LATE_CHECK_SECONDS = 1800
 
-cap = cv2.VideoCapture(0)
+
+print(
+    "Starting EMS..."
+)
+
+
+attendance_results, frame = mark_attendance(
+
+    hall_id=HALL_ID,
+    exam_id=EXAM_ID
+
+)
+
+if frame is not None:
+
+    verify_seating(
+
+        attendance_results=attendance_results,
+        frame_shape=frame.shape,
+        hall_id=HALL_ID,
+        exam_id=EXAM_ID
+
+    )
+
+
+exam_start = time.time()
+
+late_check_done = False
+
+
+cap = cv2.VideoCapture(
+    0
+)
+
 
 while True:
 
     ret, frame = cap.read()
 
     if not ret:
+
         break
 
-    faces = app.get(frame)
+    detect_cheating(
 
-    for face in faces:
+        frame,
+        hall_id=HALL_ID,
+        exam_id=EXAM_ID
 
-        embedding = face.embedding
+    )
 
-        # similarity against all known students
-        similarity = np.dot(
-            known_embeddings,
-            embedding
-        )
+    elapsed = (
 
-        idx = np.argmax(similarity)
+        time.time()
+        -
+        exam_start
 
-        confidence = similarity[idx]
+    )
+
+    if (
+
+        elapsed >= LATE_CHECK_SECONDS
+        and
+        not late_check_done
+
+    ):
 
         print(
-            f"Best match: {student_names[idx]} | Score: {confidence:.3f}"
+            "\n30 minute attendance check..."
         )
 
-        # adjust threshold if needed
-        if confidence > 0.45:
-            student = student_names[idx]
-        else:
-            student = "Unknown"
+        mark_attendance(
 
-        x1, y1, x2, y2 = map(
-            int,
-            face.bbox
+            hall_id=HALL_ID,
+            exam_id=EXAM_ID,
+            absent_only=True
+
         )
 
-        cv2.rectangle(
-            frame,
-            (x1, y1),
-            (x2, y2),
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
-            student,
-            (x1, y1 - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2
-        )
+        late_check_done = True
 
     cv2.imshow(
-        "Exam AI",
+        "EMS",
         frame
     )
 
-    if cv2.waitKey(1) == 27:
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+
         break
 
+
 cap.release()
+
 cv2.destroyAllWindows()
+
+print(
+    "EMS finished"
+)

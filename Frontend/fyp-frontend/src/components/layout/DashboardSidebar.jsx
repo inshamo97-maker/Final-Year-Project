@@ -22,6 +22,7 @@ const invigilatorNavItems = [
 const adminNavItems = [
   { to: "/admin/dashboard",    icon: LayoutDashboard, label: "Overview"      },
   { to: "/admin/invigilators", icon: Users,           label: "Invigilators"  },
+  { to: "/admin/students",     icon: Users,           label: "Students"      },
   { to: "/admin/schedule",     icon: BookOpen,        label: "Exam Schedule" },
   { to: "/admin/hardware",     icon: Server,          label: "Hardware"      },
   { to: "/admin/violations",   icon: ShieldAlert,     label: "Violations"    },
@@ -29,7 +30,6 @@ const adminNavItems = [
   { to: "/admin/seating",      icon: Grid3X3,         label: "Seating Plan"  },
   { to: "/admin/reports",      icon: FileText,        label: "Reports"       },
 ];
-
 function SidebarContent({ userRole, userName, userId, onNavigate }) {
   const navigate = useNavigate();
   const navItems = userRole === "admin" ? adminNavItems : invigilatorNavItems;

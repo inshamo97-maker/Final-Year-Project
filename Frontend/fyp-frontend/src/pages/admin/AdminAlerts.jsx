@@ -22,7 +22,7 @@ export default function AdminAlerts() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [r, i] = await Promise.all([api.getAlerts(), api.getInvigilators()]);
+      const [r, i] = await Promise.all([api.getAiAlerts(), api.getInvigilators()]);
       setRows(r); setInvs(i);
     } catch (e) { toast.error(e.message || "Failed to load"); }
     finally { setLoading(false); }
@@ -55,7 +55,7 @@ export default function AdminAlerts() {
                 accessor: (r) => (
                   <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
                     <Button size="sm" variant="outline" disabled={r.status === "reviewed"} onClick={() => markReviewed(r)}>
-                      <Check className="h-3.5 w-3.5 mr-1" /> Reviewed
+                      <Check className="h-3.5 w-3.5 mr-1" /> {r.status === "reviewed" ? "Reviewed" : "Mark reviewed"}
                     </Button>
                     <Button size="sm" variant="destructive" onClick={() => setConfirmDel(r)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>

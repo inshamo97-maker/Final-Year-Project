@@ -27,9 +27,9 @@ const STUDENTS_WITH_SEATING_SQL = `
     s.id,
     s.name,
     s.gender,
+  
     s.registration_number,
     s.class_level,
-    s.photo_path,
     s.program_name,
     COALESCE(ca.hall_id, s.hall_id) AS hall_id,
     ca.row_number,
@@ -94,6 +94,34 @@ async function getStudentColumns() {
   return studentColumnsCache;
 }
 
+function toNullableString(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text === "" ? null : text;
+}
+
+function toNullableInteger(value, fieldName) {
+  const text = toNullableString(value);
+  if (text === null) return null;
+
+  const parsed = Number(text);
+  if (!Number.isInteger(parsed)) {
+    const error = new Error(`${fieldName} must be a whole number`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return parsed;
+}
+
+function normalizeHeader(header) {
+  return String(header || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function readField(row, ...names) {
   for (const name of names) {
     const value = row[name];
@@ -104,15 +132,52 @@ function readField(row, ...names) {
   return null;
 }
 
+function buildStudentPayload(source) {
+  const normalizedName = toNullableString(readField(source, "name", "student_name", "full_name"));
+  
+  const normalizedRegistrationNumber =
+    toNullableString(readField(source, "registration_number", "registeration_number", "registration_no", "reg_number", "reg_no", "registration")) ||
+    normalizedRollNumber;
+
+  return {
+    name: normalizedName,
+    gender: toNullableString(readField(source, "gender")),
+    registration_number: normalizedRegistrationNumber,
+    class_level: toNullableInteger(readField(source, "class_level", "class"), "class_level"),
+    program_name: toNullableString(readField(source, "program_name", "program", "department")),
+    hall_id: toNullableInteger(readField(source, "hall_id", "hall"), "hall_id"),
+  };
+}
+
+function buildStudentInsert(payload, availableColumns) {
+  const orderedColumns = [
+    "name",
+    "gender",
+    "registration_number",
+    "class_level",
+    "program_name",
+    "hall_id",
+  ];
+
+  const columns = orderedColumns.filter((column) => availableColumns.has(column));
+  const values = columns.map((column) => payload[column]);
+  const placeholders = columns.map((_, index) => `$${index + 1}`).join(",");
+
+  return { columns, values, placeholders };
+}
+
 async function uploadStudentsCSV(req, res) {
   if (!req.file) return res.status(400).json({ error: "No CSV file uploaded" });
 
   const rows = [];
-  const stream = Readable.from(req.file.buffer.toString());
+  const fileText = req.file.buffer.toString();
+  const firstLine = fileText.split(/\r?\n/, 1)[0] || "";
+  const separator = (firstLine.match(/\t/g) || []).length > (firstLine.match(/,/g) || []).length ? "\t" : ",";
+  const stream = Readable.from(fileText);
 
   await new Promise((resolve, reject) => {
     stream
-      .pipe(csv())
+      .pipe(csv({ separator, mapHeaders: ({ header }) => normalizeHeader(header) }))
       .on("data", (row) => rows.push(row))
       .on("end", resolve)
       .on("error", reject);
@@ -123,47 +188,30 @@ async function uploadStudentsCSV(req, res) {
   }
 
   const availableColumns = await getStudentColumns();
-  const candidateFields = [
-    ["name", readField],
-    ["gender", readField],
-    ["registration_number", (row) => readField(row, "registration_number", "roll_number", "student_id")],
-    ["class_level", (row) => readField(row, "class_level", "class")],
-    ["photo_path", readField],
-    ["program_name", (row) => readField(row, "program_name", "program", "department")],
-    ["hall_id", readField],
-  ];
 
   const created = [];
   const errors = [];
 
-  for (const row of rows) {
-    const name = readField(row, "name");
-    if (!name) {
+  for (const [index, row] of rows.entries()) {
+    let payload;
+
+    try {
+      payload = buildStudentPayload(row);
+    } catch (err) {
+      errors.push({ row: index + 2, reason: err.message });
+      continue;
+    }
+
+    if (!payload.name) {
       errors.push({ row, reason: "Missing name" });
       continue;
     }
 
-    const columns = [];
-    const values = [];
-
-    for (const [column, resolver] of candidateFields) {
-      if (!availableColumns.has(column)) continue;
-      const value = resolver(row, column);
-      if (value === null) continue;
-      columns.push(column);
-      values.push(column === "hall_id" ? Number(value) : value);
-    }
-
-    if (!columns.includes("name")) {
-      columns.push("name");
-      values.push(name);
-    }
-
-    const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+    const { columns, values, placeholders } = buildStudentInsert(payload, availableColumns);
 
     try {
       const result = await pool.query(
-        `INSERT INTO students (${columns.join(", ")})
+        `INSERT INTO students (${columns.join(",")})
          VALUES (${placeholders})
          RETURNING *`,
         values
@@ -174,11 +222,100 @@ async function uploadStudentsCSV(req, res) {
     }
   }
 
-  res.status(201).json({
+  const status = created.length ? 201 : 400;
+  res.status(status).json({
     message: `${created.length} student(s) created, ${errors.length} skipped`,
     created,
     errors,
   });
 }
+async function addStudent(req, res) {
+  try {
+    const {
+      name,
+      gender,
 
-module.exports = { getStudentsForInvigilator, uploadStudentsCSV };
+      registration_number,
+      class_level,
+      program_name,
+      hall_id,
+
+    } = req.body;
+
+    const normalizedName = toNullableString(name);
+   
+    const normalizedRegistrationNumber = toNullableString(registration_number) || normalizedRollNumber;
+
+    if (!normalizedName) {
+      return res.status(400).json({
+        error: "Name is required"
+      });
+    }
+
+    const availableColumns = await getStudentColumns();
+    const payloadByColumn = {
+      name: normalizedName,
+      gender: toNullableString(gender),
+      registration_number: normalizedRegistrationNumber,
+      class_level: toNullableInteger(class_level, "class_level"),
+      program_name: toNullableString(program_name),
+      hall_id: toNullableInteger(hall_id, "hall_id"),
+    };
+
+    const { columns, values, placeholders } = buildStudentInsert(payloadByColumn, availableColumns);
+
+    const result = await pool.query(
+      `INSERT INTO students (${columns.join(",")})
+      VALUES(${placeholders})
+      RETURNING *`,
+      values
+    );
+
+    res.status(201).json({
+      message: "Student added successfully",
+      student: result.rows[0]
+    });
+
+  } catch(err){
+    console.error(err);
+
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        error: err.message
+      });
+    }
+
+    res.status(500).json({
+      error:"Failed to add student"
+    });
+  }
+}
+async function deleteStudent(req, res) {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM students WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    res.json({
+      message: "Student deleted successfully",
+      deleted: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete student" });
+  }
+}
+module.exports = {
+    getStudentsForInvigilator,
+    uploadStudentsCSV,
+    addStudent,
+    deleteStudent
+};

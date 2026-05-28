@@ -16,11 +16,11 @@ export default function RealTimeAlertsPanel({ alerts }) {
         ) : (
           alerts.map((alert) => (
             <div
-              key={alert.event_id || alert.id || `${alert.type}-${alert.timestamp}`}
+              key={alert.eventId || alert.event_id || alert.id || `${alert.type || alert.violationType}-${alert.timestamp}`}
               className="rounded-md border border-border p-3 bg-muted/30"
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{alert.type || "unknown"}</p>
+                <p className="text-sm font-medium">{alert.type || alert.violationType || "unknown"}</p>
                 {alert.severity ? (
                   <span className="text-[11px] px-2 py-0.5 rounded bg-background border border-border">
                     {String(alert.severity).toUpperCase()}

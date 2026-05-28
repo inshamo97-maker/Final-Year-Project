@@ -59,7 +59,7 @@ async function ingestAiAlert(req, res) {
 
   const aiAlert = insert.rows[0];
 
-  const { violation, alert, severity, status } =
+  const { violation, severity, status } =
     await createViolationAndAlertFromAiEvent({
       event_id,
       type,
@@ -70,10 +70,11 @@ async function ingestAiAlert(req, res) {
       exam_id,
     });
 
-  await pool.query(
-    `UPDATE ai_alerts SET violation_id = $1, alert_id = $2 WHERE event_id = $3`,
-    [violation.id, alert.id, event_id]
+  const updatedAlert = await pool.query(
+    `UPDATE ai_alerts SET violation_id = $1 WHERE event_id = $2 RETURNING *`,
+    [violation.id, event_id]
   );
+  const alert = updatedAlert.rows[0] || aiAlert;
 
   const io = req.app.get("io");
 
@@ -87,14 +88,14 @@ async function ingestAiAlert(req, res) {
       exam_id: exam_id ?? null,
       student_id: student_id ?? null,
       severity: isUnknownFace ? "high" : severity,
-      status,
+      status: alert.status || "pending",
       violation_id: violation.id,
       alert_id: alert.id,
     });
   }
 
   return ok(res, {
-    ai_alert: aiAlert,
+    ai_alert: alert,
     violation,
     alert,
     severity,

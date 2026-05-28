@@ -93,7 +93,9 @@ function timeForInput(value) {
   return match ? match[1] : text;
 }
 
-const examFromApi = (x) => x ? { id: String(x.id), name: x.name, subject: x.subject, date: x.date ? String(x.date).slice(0, 10) : x.date, startTime: timeForInput(x.start_time ?? x.startTime), endTime: timeForInput(x.end_time ?? x.endTime), status: x.status, hallId: x.hall_id ?? x.hallId } : null;
+const examFromApi = (x) => x ? { id: String(x.id), name: x.name, subject: x.subject, date: x.date
+  ? new Date(x.date).toLocaleDateString("en-CA")
+  : x.date, startTime: timeForInput(x.start_time ?? x.startTime), endTime: timeForInput(x.end_time ?? x.endTime), status: x.status, hallId: x.hall_id ?? x.hallId } : null;
 const examToApi   = (x) => x ? { name: x.name, subject: x.subject, date: x.date, start_time: x.start_time ?? x.startTime, end_time: x.end_time ?? x.endTime, status: x.status, hall_id: x.hall_id ?? x.hallId } : {};
 
 const cameraFromApi = (x) => x ? { id: String(x.id), position: x.position, ipAddress: x.ip_address ?? x.ipAddress, model: x.model, hallId: x.hall_id ?? x.hallId, isActive: x.is_active ?? x.isActive } : null;
@@ -108,14 +110,14 @@ const microphoneToApi   = (x) => x ? { range: x.range ?? null, sensitivity: x.se
 const violationFromApi = (x) => x ? { id: String(x.id), type: x.type, timestamp: x.timestamp, confidence: x.confidence, hallId: x.hall_id ?? x.hallId, studentId: x.student_id ?? x.studentId, status: x.status, severity: x.severity ?? x.severity_level ?? null, examId: x.exam_id ?? x.examId ?? null, eventId: x.event_id ?? x.eventId ?? null, evidencePath: x.evidence_path ?? x.evidencePath, cameraId: x.camera_id ?? x.cameraId, micId: x.mic_id ?? x.micId } : null;
 const violationToApi   = (x) => x ? { type: x.type, timestamp: x.timestamp, confidence: x.confidence, hall_id: x.hall_id ?? x.hallId, student_id: x.student_id ?? x.studentId, status: x.status, evidence_path: x.evidence_path ?? x.evidencePath, camera_id: x.camera_id ?? x.cameraId, mic_id: x.mic_id ?? x.micId } : {};
 
-const alertFromApi = (x) => x ? { id: String(x.id), violationType: x.violation_type ?? x.violationType, sentTo: x.sent_to ?? x.sentTo, hallId: x.hall_id ?? x.hallId, studentId: x.student_id ?? x.studentId, status: x.status, timestamp: x.timestamp } : null;
-const alertToApi   = (x) => x ? { violation_id: x.violation_id ?? x.violationId, sent_to: x.sent_to ?? x.sentTo } : {};
+const alertFromApi = (x) => x ? { id: String(x.id), eventId: x.event_id ?? x.eventId, type: x.type, violationType: x.violation_type ?? x.violationType ?? x.type, confidence: x.confidence, severity: x.severity, sentTo: x.sent_to ?? x.sentTo, hallId: x.hall_id ?? x.hallId, studentId: x.student_id ?? x.studentId, examId: x.exam_id ?? x.examId, status: x.status ?? "pending", timestamp: x.timestamp } : null;
+const alertToApi   = (x) => x ? { event_id: x.event_id ?? x.eventId, type: x.type ?? x.violationType, confidence: x.confidence, timestamp: x.timestamp, hall_id: x.hall_id ?? x.hallId, exam_id: x.exam_id ?? x.examId, student_id: x.student_id ?? x.studentId, violation_id: x.violation_id ?? x.violationId } : {};
 
 const studentFromApi = (x) => x ? {
   id: String(x.id),
   name: x.name,
   studentId: x.roll_number ?? x.registration_number ?? String(x.id),
-  rollNumber: x.roll_number ?? "",
+  rollNumber: x.roll_number ?? x.registration_number ?? "",
   registrationNumber: x.registration_number ?? "",
   hallId: x.hall_id ?? null,
   faceId: x.face_id ?? null,
@@ -138,25 +140,19 @@ const reportFromApi = (x) => x ? {
   duration: x.duration ?? ""
 } : null;
 
-function combineDateAndTime(date, value) {
-  if (!value) return value;
-  const text = String(value);
-  if (text.includes("T") || /^\d{4}-\d{2}-\d{2}\s/.test(text)) return text;
-  if (!date || !/^\d{2}:\d{2}/.test(text)) return text;
-  return `${date}T${text.length === 5 ? `${text}:00` : text}`;
-}
+
 
 function examPayloadToApi(x) {
   if (!x) return {};
-  const date = x.date;
-  const startValue = x.start_time ?? x.startTime;
-  const endValue = x.end_time ?? x.endTime;
+
   return {
     name: x.name,
     subject: x.subject,
-    date,
-    start_time: combineDateAndTime(date, startValue),
-    end_time: combineDateAndTime(date, endValue),
+    date: x.date,
+
+    start_time: x.start_time ?? x.startTime,
+    end_time: x.end_time ?? x.endTime,
+
     hall_id: x.hall_id ?? x.hallId,
   };
 }
@@ -288,23 +284,24 @@ export async function updateViolationStatus(id, status) {
 
 const alertCrud = crud(alertsStore, "alert");
 
-export async function getAlerts() {
-  return (await request("/alerts")).map(alertFromApi);
-}
-
-export const getAlertById   = makeCrudApi(alertCrud.get, () => async (id) => alertFromApi(await request(`/alerts/${id}`)));
-export const createAlert    = makeCrudApi(alertCrud.create, () => async (p) => alertFromApi(await request("/alerts", { method: "POST", body: alertToApi(p) })));
-export const deleteAlert    = makeCrudApi(alertCrud.remove, () => async (id) => { await request(`/alerts/${id}`, { method: "DELETE" }); return { success: true }; });
 
 export async function updateAlertStatus(id, status) {
-  return alertFromApi(await request(`/alerts/${id}/status`, { method: "PATCH", body: { status } }));
+  return alertFromApi(await request(`/ai-alerts/${id}/status`, {
+    method: "PATCH",
+    body: { status }
+  }));
 }
+export const getAlertById   = makeCrudApi(alertCrud.get, () => async (id) => alertFromApi(await request(`/ai-alerts/${id}`)));
+export const createAlert    = makeCrudApi(alertCrud.create, () => async (p) => alertFromApi(await request("/ai-alerts", { method: "POST", body: alertToApi(p) })));
+export const deleteAlert    = makeCrudApi(alertCrud.remove, () => async (id) => { await request(`/ai-alerts/${id}`, { method: "DELETE" }); return { success: true }; });
+
+
 
 // ───────────────────────────────────────────────────────────────────────────────
 // AI & Attendance Integration
 // ───────────────────────────────────────────────────────────────────────────────
 
-export async function getAiAlerts()         { return request("/ai-alerts"); }
+export async function getAiAlerts()         { return (await request("/ai-alerts")).map(alertFromApi); }
 export async function getAttendanceRecords(){ return request("/attendance"); }
 
 function getAiKey() {
@@ -376,7 +373,7 @@ export async function getAdminDashboardStats() {
     request("/speakers"),
     request("/microphones"),
     request("/violations"),
-    request("/alerts"),
+    request("/ai-alerts"),
     request("/students"),
   ]);
 
@@ -395,7 +392,7 @@ export async function getAdminDashboardStats() {
 
 export async function getInvigilatorDashboardStats() {
   const [alerts, exams, halls, students] = await Promise.all([
-    request("/alerts"),
+    request("/ai-alerts"),
     request("/exams"),
     request("/examhalls"),
     request("/students"),
@@ -423,43 +420,72 @@ export async function getInvigilatorDashboardStats() {
  * Used by invigilator dashboard to display live exam details
  */
 export async function getCurrentSession() {
-  try {
-    const data     = await request("/exams");
-    const examList = ((data?.exams || data) ?? []).map(examFromApi);
-    const active   = examList.find((e) => e.status === "active");
-    
-    if (!active) {
-      return { examName: "No active exam", duration: "—", timeLeft: "—", students: "—" };
-    }
+  const fmtMins = (ms) => {
+    if (ms <= 0) return "0m";
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
-    const start   = active.startTime ? new Date(combineDateAndTime(active.date, active.startTime)) : null;
-    const end     = active.endTime   ? new Date(combineDateAndTime(active.date, active.endTime))   : null;
-    const now     = new Date();
+  const isValid = (d) => d instanceof Date && !isNaN(d);
 
-    const fmtMins = (ms) => {
-      if (ms <= 0) return "0m";
-      const h = Math.floor(ms / 3600000);
-      const m = Math.floor((ms % 3600000) / 60000);
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    };
+  const data = await request("/exams");
+  const examList = ((data?.exams || data) ?? []).map(examFromApi);
+  const active = examList.find((e) => e.status === "active");
 
-    const duration = start && end ? fmtMins(end - start) : "—";
-    const timeLeft = end ? (end > now ? fmtMins(end - now) : "Ended") : "—";
-
+  if (!active) {
     return {
-      examName: `${active.name} — ${active.subject}`,
-      duration,
-      timeLeft,
-      students: "—",   // would need seat_allocations endpoint
+      examName: "No active exam",
+      duration: "—",
+      timeLeft: "—",
+      students: "—"
     };
-  } catch (error) {
-    throw error;
   }
+
+  const start = active.startTime && active.date
+    ? new Date(`${active.date}T${String(active.startTime).slice(0, 8)}`)
+    : null;
+
+  const end = active.endTime && active.date
+    ? new Date(`${active.date}T${String(active.endTime).slice(0, 8)}`)
+    : null;
+
+  const now = new Date();
+
+  const duration =
+    start && end && isValid(start) && isValid(end)
+      ? fmtMins(end - start)
+      : "—";
+
+  const timeLeft =
+    end && isValid(end)
+      ? end > now
+        ? fmtMins(end - now)
+        : "Ended"
+      : "—";
+
+  return {
+    examName: `${active.name} — ${active.subject}`,
+    duration,
+    timeLeft,
+    students: "—"
+  };
 }
+
 // Reports
 export async function getReports() {
-  const data = await request("/reports");
-  return (Array.isArray(data) ? data : []).map(reportFromApi);
+  try {
+    const data = await request("/reports");
+
+    const list =
+      Array.isArray(data) ? data :
+      Array.isArray(data?.reports) ? data.reports :
+      [];
+
+    return list.map(reportFromApi);
+  } catch (err) {
+    return [];
+  }
 }
 
 function downloadTextFile(filename, content, mimeType) {
@@ -505,81 +531,89 @@ export async function exportReport(format = "csv") {
  * Returns enriched hall data with students, seats, and camera status
  */
 export async function getInvigilatorHallDetails() {
-  try {
-    const [hallsData, camerasData, alertsData, studentsData] = await Promise.allSettled([
-      request("/examhalls"),
-      request("/cameras"),
-      request("/alerts"),
-      request("/students"),
-    ]);
+  const [hallsRes, camerasRes, alertsRes, studentsRes] = await Promise.allSettled([
+    request("/examhalls"),
+    request("/cameras"),
+    request("/ai-alerts"),
+    request("/students"),
+  ]);
 
-    const halls = hallsData.status === "fulfilled" 
-      ? (hallsData.value?.exam_halls || hallsData.value || []).map(hallFromApi) 
-      : [];
-    const cameras = camerasData.status === "fulfilled" 
-      ? (camerasData.value?.cameras || camerasData.value || []).map(cameraFromApi) 
-      : [];
-    const alerts = alertsData.status === "fulfilled" 
-      ? (alertsData.value?.alerts || alertsData.value || []).map(alertFromApi) 
-      : [];
-    const students = studentsData.status === "fulfilled"
-      ? ((studentsData.value || [])).map(studentFromApi)
-      : [];
+  const halls = (hallsRes.status === "fulfilled" ? (hallsRes.value?.exam_halls || hallsRes.value || []) : []);
+  const cameras = (camerasRes.status === "fulfilled" ? (camerasRes.value?.cameras || camerasRes.value || []) : []);
+  const alerts = (alertsRes.status === "fulfilled" ? (alertsRes.value?.alerts || alertsRes.value || []) : []);
+  const students = (studentsRes.status === "fulfilled" ? (studentsRes.value || []) : []);
 
-    return halls.map((hall) => {
-      const hallCameras = cameras.filter((c) => c.hallId === hall.id);
-      const hallAlerts = alerts.filter((a) => a.hallId === hall.id);
-      const hallStudents = students.filter((s) => String(s.hallId ?? "") === String(hall.id));
-      const maxRow = Math.max(0, ...hallStudents.map((s) => Number(s.rowNumber) || 0));
-      const maxCol = Math.max(0, ...hallStudents.map((s) => Number(s.columnNumber) || 0));
-      const seating = Array.from({ length: maxRow }, () =>
-        Array.from({ length: maxCol }, () => ({ status: "empty", student: null, alert: null }))
+  return halls.map((hall) => {
+    const hallCameras = cameras.filter(c => String(c.hallId) === String(hall.id));
+    const hallAlerts = alerts.filter(a => String(a.hallId) === String(hall.id));
+
+    const hallStudents = students.filter(s =>
+      String(s.hall_id ?? s.hallId) === String(hall.id)
+    );
+
+    const rows = Number(hall.rows || hall.rowCount || 0);
+    const cols = Number(hall.cols || hall.colCount || 0);
+
+    const maxRow = rows || Math.max(0, ...hallStudents.map(s => Number(s.row_number || s.rowNumber || 0)));
+    const maxCol = cols || Math.max(0, ...hallStudents.map(s => Number(s.column_number || s.columnNumber || 0)));
+
+    const seating = Array.from({ length: maxRow }, () =>
+      Array.from({ length: maxCol }, () => ({
+        status: "empty",
+        student: null,
+        alert: null,
+      }))
+    );
+
+    hallStudents.forEach((student) => {
+      const rowIndex = Number(student.row_number ?? student.rowNumber) - 1;
+      const colIndex = Number(student.column_number ?? student.columnNumber) - 1;
+
+      if (rowIndex < 0 || colIndex < 0) return;
+      if (!seating[rowIndex]?.[colIndex]) return;
+
+      const studentAlerts = hallAlerts.filter(a =>
+        String(a.student_id ?? a.studentId) === String(student.id)
       );
 
-      hallStudents.forEach((student) => {
-        const rowIndex = Number(student.rowNumber) - 1;
-        const colIndex = Number(student.columnNumber) - 1;
-        if (rowIndex < 0 || colIndex < 0 || !seating[rowIndex]?.[colIndex]) return;
-        const studentAlerts = hallAlerts.filter((a) => String(a.studentId ?? "") === String(student.id));
-        const pendingAlert = studentAlerts.find((a) => a.status === "pending") || studentAlerts[0] || null;
-        seating[rowIndex][colIndex] = {
-          status: pendingAlert ? "flagged" : "occupied",
-          student: {
-            id: student.id,
-            name: student.name,
-            rollNumber: student.rollNumber || student.registrationNumber,
-            department: student.programName || "",
-            email: student.email || "",
-          },
-          alert: pendingAlert ? {
-            id: pendingAlert.id,
-            alertType: pendingAlert.violationType,
-            time: pendingAlert.timestamp,
-            status: pendingAlert.status,
-          } : null,
-        };
-      });
+      const pending = studentAlerts.find(a => a.status === "pending") || null;
 
-      return {
-        id: hall.id,
-        name: `${hall.hallNumber} - ${hall.location}`,
-        totalStudents: hallStudents.length,
-        capacity: hall.capacity,
-        activeCameras: hallCameras.filter((c) => c.isActive).length,
-        currentAlerts: hallAlerts.filter((a) => a.status === "pending").length,
-        seating,
-        cameras: hallCameras.map((c) => ({
-          id: c.id,
-          name: c.position,
-          status: c.isActive ? "active" : "inactive",
-        })),
+      seating[rowIndex][colIndex] = {
+        status: pending ? "flagged" : "occupied",
+        student: {
+          id: student.id,
+          name: student.name || "",
+          rollNumber: student.roll_number || student.registration_number || "",
+          department: student.program_name || "",
+          email: student.email || "",
+        },
+        alert: pending
+          ? {
+              id: pending.id,
+              alertType: pending.violation_type || pending.alertType,
+              time: pending.timestamp,
+              status: pending.status,
+            }
+          : null,
       };
     });
-  } catch (error) {
-    throw error;
-  }
-}
 
+    return {
+      id: hall.id,
+      name: hall.name || `${hall.hall_number || ""} - ${hall.location || ""}`,
+      totalStudents: hallStudents.length,
+      capacity: hall.capacity || 0,
+      activeCameras: hallCameras.filter(c => c.isActive).length,
+      currentAlerts: hallAlerts.filter(a => a.status === "pending").length,
+      seating,
+      cameras: hallCameras.map(c => ({
+        id: c.id,
+        name: c.position || "Camera",
+        status: c.isActive ? "active" : "inactive",
+      })),
+    };
+  });
+}
 // ───────────────────────────────────────────────────────────────────────────────
 // Admin Exam Halls
 // ───────────────────────────────────────────────────────────────────────────────
@@ -664,4 +698,56 @@ export async function uploadStudentsList(file) {
 
 export async function saveSeatingPlan(halls) {
   return request("/seating", { method: "POST", body: { halls } });
+}
+// ─────────────────────────────────────────────────────
+// Student Management
+// ─────────────────────────────────────────────────────
+
+export async function createStudent(student) {
+  const cleanString = (value) => {
+    const text = String(value ?? "").trim();
+    return text === "" ? null : text;
+  };
+
+  const cleanInteger = (value) => {
+    const text = cleanString(value);
+    return text === null ? null : Number(text);
+  };
+
+  const registrationNumber = cleanString(student.registrationNumber);
+
+  return request("/students", {
+    method: "POST",
+    body: {
+      name: cleanString(student.name),
+      gender: cleanString(student.gender),
+      registration_number: registrationNumber,
+      program_name: cleanString(student.programName),
+      class_level: cleanInteger(student.classLevel),
+      hall_id: cleanInteger(student.hallId)
+    }
+  });
+}
+
+export async function uploadStudentsCsv(file) {
+  const fd = new FormData();
+
+  fd.append("file", file);
+
+  return request(
+    "/students/upload/csv",
+    {
+      method:"POST",
+      formData:fd
+    }
+  );
+}
+
+export async function deleteStudent(id) {
+  return request(
+    `/students/${id}`,
+    {
+      method:"DELETE"
+    }
+  );
 }

@@ -21,7 +21,7 @@ import AdminViolations from "./pages/admin/AdminViolations";
 import AdminAlerts from "./pages/admin/AdminAlerts";
 import AdminSeating from "./pages/admin/AdminSeating";
 import AdminReports from "./pages/admin/AdminReports";
-
+import AdminStudents from "./pages/admin/AdminStudents";
 import NotFound from "./pages/NotFound";
 
 
@@ -52,15 +52,8 @@ const App = () => (
           <Route path="/admin/alerts"      element={<AdminAlerts />} />
           <Route path="/admin/seating"     element={<AdminSeating />} />
           <Route path="/admin/reports"     element={<AdminReports />} />
-
-          {/* Legacy redirects so old links don't 404 */}
-          <Route path="/admin/halls"        element={<Navigate to="/admin/schedule" replace />} />
-          <Route path="/admin/exams"        element={<Navigate to="/admin/schedule" replace />} />
-          <Route path="/admin/cameras"      element={<Navigate to="/admin/hardware" replace />} />
-          <Route path="/admin/microphones"  element={<Navigate to="/admin/hardware" replace />} />
-          <Route path="/admin/speakers"     element={<Navigate to="/admin/hardware" replace />} />
-          <Route path="/invigilator/legacy-dashboard" element={<Navigate to="/invigilator/dashboard" replace />} />
-
+          <Route path="/admin/students" element={<AdminStudents/>} />
+   
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

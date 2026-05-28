@@ -1,36 +1,60 @@
-import psycopg2
 import json
 import numpy as np
 from db import get_connection
 
 
 def load_students():
-    conn = get_connection()
-    cur = conn.cursor()
 
-    cur.execute("""
-        SELECT s.name, se.embedding
+    conn=get_connection()
+    cur=conn.cursor()
+
+    cur.execute(
+        """
+        SELECT
+            s.id,
+            s.name,
+            se.embedding
         FROM students s
         JOIN student_embeddings se
-        ON s.id = se.student_id
-    """)
+        ON s.id=se.student_id
+        """
+    )
 
-    rows = cur.fetchall()
+    rows=cur.fetchall()
 
-    student_names = []
-    embeddings = []
+    student_ids=[]
+    student_names=[]
+    embeddings=[]
 
-    for name, emb in rows:
-        student_names.append(name)
+    for student_id,name,emb in rows:
 
-        if isinstance(emb, str):
-            emb = json.loads(emb)
+        student_ids.append(
+            student_id
+        )
 
-        embeddings.append(np.array(emb))
+        student_names.append(
+            name
+        )
+
+        if isinstance(emb,str):
+            emb=json.loads(
+                emb
+            )
+
+        embeddings.append(
+            np.array(emb)
+        )
 
     cur.close()
     conn.close()
 
-    print(f"Students loaded: {len(student_names)}")
+    print(
+        "Students loaded:",
+        len(student_names)
+    )
 
-    return student_names, np.array(embeddings)
+    return (
+        student_ids,
+        student_names,
+        np.array(embeddings)
+    )

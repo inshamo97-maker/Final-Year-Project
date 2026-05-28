@@ -74,14 +74,7 @@ async function createViolationAndAlertFromAiEvent({
 
   const violation = violationResult.rows[0];
 
-  const alertResult = await pool.query(
-    `INSERT INTO alerts (violation_id, sent_to, status, timestamp)
-     VALUES ($1, $2, 'pending', NOW())
-     RETURNING *`,
-    [violation.id, "invigilator"]
-  );
-
-  return { violation, alert: alertResult.rows[0], severity, status };
+  return { violation, severity, status };
 }
 
 module.exports = { createViolationAndAlertFromAiEvent };

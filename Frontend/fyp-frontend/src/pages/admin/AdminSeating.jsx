@@ -18,13 +18,27 @@ const createInitialSeating = (rows, cols) => {
   );
 };
 
+const PROGRAMS_BY_CLASS = {
+  "9": ["Science", "Humanities"],
+  "10": ["Science", "Humanities"],
+  "11": ["FSC Pre-Medical", "FSC Pre-Engineering", "ICS"],
+  "12": ["FSC Pre-Medical", "FSC Pre-Engineering", "ICS"],
+};
+
+const classOptions = Object.keys(PROGRAMS_BY_CLASS);
+const normalize = (value) => String(value ?? "").trim().toLowerCase();
+
 export default function AdminSeating() {
   const user = getCurrentUser() || { name: "Prof. Michael Chen", id: "ADM001", role: "admin" };
   const [seatingPlanUploaded, setSeatingPlanUploaded] = useState(true);
   const [studentsUploaded, setStudentsUploaded] = useState(true);
   const [halls, setHalls] = useState([]);
   const [students, setStudents] = useState([]);
+  const [exams, setExams] = useState([]);
   const [selectedHallId, setSelectedHallId] = useState("1");
+  const [selectedExamId, setSelectedExamId] = useState("");
+  const [selectedClassLevel, setSelectedClassLevel] = useState("12");
+  const [selectedProgramName, setSelectedProgramName] = useState("FSC Pre-Engineering");
   const [selectedSeat, setSelectedSeat] = useState(null);
   const [studentSearch, setStudentSearch] = useState("");
   const seatingPlanInputRef = useRef(null);
@@ -54,10 +68,33 @@ export default function AdminSeating() {
       console.error("Failed to load students:", err);
       toast.error("Failed to load students");
     });
+
+  api.getExams()
+    .then((e) => {
+      setExams(Array.isArray(e) ? e : []);
+    })
+    .catch((err) => {
+      console.error("Failed to load exams:", err);
+      toast.error("Failed to load exams");
+    });
 }, []);
 
 const selectedHall =
   halls.find((h) => String(h.id) === String(selectedHallId)) || halls[0];
+const selectedPrograms = PROGRAMS_BY_CLASS[selectedClassLevel] || [];
+const availableExams = exams.filter((exam) => String(exam.hallId) === String(selectedHallId));
+
+useEffect(() => {
+  if (!selectedPrograms.includes(selectedProgramName)) {
+    setSelectedProgramName(selectedPrograms[0] || "");
+  }
+}, [selectedClassLevel, selectedProgramName, selectedPrograms]);
+
+useEffect(() => {
+  if (!availableExams.some((exam) => String(exam.id) === String(selectedExamId))) {
+    setSelectedExamId(availableExams[0]?.id ? String(availableExams[0].id) : "");
+  }
+}, [selectedHallId, selectedExamId, availableExams]);
 
   const handleSeatingPlanUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -85,13 +122,19 @@ setSeatingPlanUploaded(true);
     autoMapStudents(newStudents);
   };
 
+  const studentMatchesFilters = (student) =>
+    String(student.classLevel ?? "") === String(selectedClassLevel) &&
+    normalize(student.programName) === normalize(selectedProgramName);
+
   const autoMapStudents = (studentList) => {
+    const eligibleStudents = studentList.filter(studentMatchesFilters);
     setHalls((prev) => {
       let studentIndex = 0;
       return prev.map((hall) => {
+        if (String(hall.id) !== String(selectedHallId)) return hall;
         const newSeats = hall.seats.map((row) => row.map((seat) => {
-          if (studentIndex < studentList.length) {
-            const student = studentList[studentIndex]; studentIndex++;
+          if (studentIndex < eligibleStudents.length) {
+            const student = eligibleStudents[studentIndex]; studentIndex++;
             return { ...seat, studentId: student.id, studentName: student.name };
           }
           return seat;
@@ -142,7 +185,11 @@ toast.success(
 
   const handleSave = async () => {
     try {
-      await api.saveSeatingPlan(halls);
+      if (!selectedHall || !selectedExamId) {
+        toast.error("Select an exam and hall before saving");
+        return;
+      }
+      await api.saveSeatingPlan([{ ...selectedHall, examId: selectedExamId }]);
       toast.success("Seating plan saved successfully!");
     } catch (err) {
       console.error("Failed to save seating plan:", err);
@@ -150,7 +197,12 @@ toast.success(
     }
   };
 
-  const filteredStudents = students.filter((s) => String(s.name || "").toLowerCase().includes(studentSearch.toLowerCase()) || String(s.id || "").toLowerCase().includes(studentSearch.toLowerCase()));
+  const filteredStudents = students.filter((s) => {
+    const matchSearch =
+      String(s.name || "").toLowerCase().includes(studentSearch.toLowerCase()) ||
+      String(s.id || "").toLowerCase().includes(studentSearch.toLowerCase());
+    return matchSearch && studentMatchesFilters(s);
+  });
 const assignedCount =selectedHall?.seats?.flat()?.filter((s) => s.studentId).length || 0;
   const totalSeats = selectedHall ? selectedHall.rows * selectedHall.cols : 0;
 
@@ -218,6 +270,35 @@ const assignedCount =selectedHall?.seats?.flat()?.filter((s) => s.studentId).len
     </SelectItem>
   ))}
 </SelectContent>              </Select>
+              <label className="text-sm font-medium text-foreground">Exam:</label>
+              <Select value={selectedExamId} onValueChange={setSelectedExamId}>
+                <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Select exam" /></SelectTrigger>
+                <SelectContent>
+                  {availableExams.map((exam) => (
+                    <SelectItem key={exam.id} value={String(exam.id)}>
+                      {exam.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="text-sm font-medium text-foreground">Class:</label>
+              <Select value={selectedClassLevel} onValueChange={setSelectedClassLevel}>
+                <SelectTrigger className="w-full sm:w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {classOptions.map((level) => (
+                    <SelectItem key={level} value={level}>Class {level}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="text-sm font-medium text-foreground">Program:</label>
+              <Select value={selectedProgramName} onValueChange={setSelectedProgramName}>
+                <SelectTrigger className="w-full sm:w-56"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {selectedPrograms.map((program) => (
+                    <SelectItem key={program} value={program}>{program}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-2 sm:gap-3">
               <input ref={seatingPlanInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleSeatingPlanUpload} className="hidden" />

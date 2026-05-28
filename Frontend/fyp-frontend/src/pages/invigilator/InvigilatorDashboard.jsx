@@ -40,7 +40,7 @@ export default function InvigilatorDashboard() {
           api.getExamHallOptions(),
           api.getCameraOptions(),
           api.getCurrentSession(),
-          api.getAlerts(),
+          api.getAiAlerts(),
           api.getExamHalls(),
           api.getAiAlerts(),
         ]);

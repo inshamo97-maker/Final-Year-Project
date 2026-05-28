@@ -42,10 +42,10 @@ async function queryComputedReports(params = []) {
       e.date,
       e.hall_id,
       eh.hall_number,
-      EXTRACT(EPOCH FROM (e.end_time - e.start_time)) AS duration_seconds,
+      EXTRACT(EPOCH FROM ((e.date + e.end_time) - (e.date + e.start_time))) AS duration_seconds,
       COUNT(DISTINCT v.id) AS total_violations,
       COUNT(DISTINCT a.id) AS total_alerts,
-      COUNT(DISTINCT CASE WHEN a.status = 'reviewed' THEN a.id END) AS reviewed_alerts,
+      COUNT(DISTINCT a.id) AS reviewed_alerts,
       COUNT(DISTINCT att.student_id) AS attendance_count,
       COALESCE(
         NULLIF(COUNT(DISTINCT sa.student_id), 0),
@@ -59,9 +59,9 @@ async function queryComputedReports(params = []) {
       OR (sa.exam_id IS NULL AND sa.hall_id = e.hall_id)
     LEFT JOIN violations v
       ON v.hall_id = e.hall_id
-      AND v.timestamp >= e.start_time
-      AND v.timestamp <= e.end_time
-    LEFT JOIN alerts a ON a.violation_id = v.id
+      AND v.timestamp >= (e.date + e.start_time)
+      AND v.timestamp <= (e.date + e.end_time)
+LEFT JOIN ai_alerts a ON a.violation_id = v.id
     LEFT JOIN attendance att
       ON att.student_id IS NOT NULL
       AND (
