@@ -1,208 +1,95 @@
 from datetime import datetime
-from db import get_connection
-
+from db import DB
 
 def verify_seating(
     attendance_results,
     frame_shape,
     hall_id=1,
-    exam_id=1
+    exam_id=3
 ):
 
-    print(
-        "\nStarting seating verification..."
-    )
+    print("\nStarting seating verification...")
 
-    conn=get_connection()
+    conn = DB.get_connection()
+    cur = conn.cursor()
+    now = datetime.now()
 
-    cur=conn.cursor()
+    print("DB CONNECTED OK")
 
-    now=datetime.now()
+    cur.execute("SELECT current_database(), current_schema();")
+    print("DB INFO:", cur.fetchone())
 
-    frame_height=frame_shape[0]
-    frame_width=frame_shape[1]
+    cur.execute("SELECT COUNT(*) FROM seat_allocations")
+    print("TOTAL SEAT ROWS:", cur.fetchone())
 
-    # determine hall layout automatically
-    cur.execute(
-        """
-        SELECT
-            MAX(row_number),
-            MAX(column_number)
-
+    cur.execute("""
+        SELECT student_id, row_number, column_number, hall_id, exam_id
         FROM seat_allocations
+    """)
 
-        WHERE hall_id=%s
-        AND exam_id=%s
-        """,
-        (
-            hall_id,
-            exam_id
-        )
-    )
+    all_rows = cur.fetchall()
+    print("FULL TABLE SAMPLE:", all_rows)
 
-    rows,cols=cur.fetchone()
+    cur.execute("""
+        SELECT student_id, row_number, column_number
+        FROM seat_allocations
+        WHERE hall_id=%s AND exam_id=%s
+    """, (hall_id, exam_id))
 
-    if rows is None or cols is None:
+    rows_raw = cur.fetchall()
+    print("FILTERED ROWS:", rows_raw)
 
-        print(
-            "No seating data found"
-        )
-
+    if not rows_raw:
+        print("❌ FILTER IS THE PROBLEM (NO DATA MATCHING)")
         cur.close()
-        conn.close()
 
         return
 
+    seat_map = {(r, c): sid for sid, r, c in rows_raw}
+    expected_positions = {sid: (r, c) for (r, c), sid in seat_map.items()}
 
-    seat_width=frame_width/cols
-    seat_height=frame_height/rows
+    print("EXPECTED POSITIONS:", expected_positions)
 
+    rows = max(r for _, r, _ in rows_raw)
+    cols = max(c for _, _, c in rows_raw)
+
+    print("GRID SIZE -> rows:", rows, "cols:", cols)
+
+    frame_h, frame_w = frame_shape[:2]
 
     for student in attendance_results:
 
-        student_id=student[
-            "student_id"
-        ]
+        student_id = student["student_id"]
+        bbox = student["bbox"]
 
-        bbox=student[
-            "bbox"
-        ]
+        x1, y1, x2, y2 = map(int, bbox)
 
-        x1,y1,x2,y2=map(
-            int,
-            bbox
-        )
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
 
-        center_x=(x1+x2)/2
-        center_y=(y1+y2)/2
+        detected_col = int(center_x / (frame_w / cols)) + 1
+        detected_row = rows - int(center_y / (frame_h / rows))
 
+        expected = expected_positions.get(student_id)
 
-        detected_col=int(
-            center_x/seat_width
-        )+1
+        print("\n--- STUDENT CHECK ---")
+        print("Student:", student_id)
+        print("Detected:", (detected_row, detected_col))
+        print("Expected:", expected)
 
-        detected_row=int(
-            center_y/seat_height
-        )+1
-
-
-        cur.execute(
-            """
-            SELECT
-                row_number,
-                column_number
-
-            FROM seat_allocations
-
-            WHERE student_id=%s
-            AND hall_id=%s
-            AND exam_id=%s
-            """,
-            (
-                student_id,
-                hall_id,
-                exam_id
-            )
-        )
-
-        expected=cur.fetchone()
-
-
-        if expected is None:
-
-            print(
-                f"No seat assigned for student {student_id}"
-            )
-
+        if not expected:
+            print("⚠ NOT IN SEAT MAP")
             continue
 
+        exp_row, exp_col = expected
 
-        expected_row=expected[0]
-        expected_col=expected[1]
-
-
-        expected_seat=(
-            chr(64+expected_col)
-            +
-            str(expected_row)
-        )
-
-        detected_seat=(
-            chr(64+detected_col)
-            +
-            str(detected_row)
-        )
-
-
-        print(
-            f"\nStudent: {student_id}"
-        )
-
-        print(
-            f"Expected: {expected_seat}"
-        )
-
-        print(
-            f"Detected: {detected_seat}"
-        )
-
-
-        if (
-            expected_row!=detected_row
-            or
-            expected_col!=detected_col
-        ):
-
-            print(
-                "Seat violation detected"
-            )
-
-            cur.execute(
-                """
-                INSERT INTO ai_alerts
-                (
-                    event_id,
-                    type,
-                    confidence,
-                    timestamp,
-                    hall_id,
-                    exam_id,
-                    student_id,
-                    violation_id,
-                    created_at
-                )
-
-                VALUES
-                (
-                    gen_random_uuid(),
-                    %s,%s,%s,%s,%s,%s,%s,%s
-                )
-                """,
-                (
-                    "seat_violation",
-                    1.0,
-                    now,
-                    hall_id,
-                    str(exam_id),
-                    student_id,
-                    None,
-                    now
-                )
-            )
-
+        if (exp_row != detected_row or exp_col != detected_col):
+            print("❌ SEAT VIOLATION")
         else:
-
-            print(
-                "Seat verified"
-            )
-
+            print("✔ OK")
 
     conn.commit()
-
     cur.close()
+    
 
-    conn.close()
-
-    print(
-        "\nSeating verification complete"
-    )
+    print("\nSeating verification complete")

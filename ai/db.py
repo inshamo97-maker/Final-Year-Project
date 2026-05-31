@@ -1,28 +1,28 @@
 import psycopg2
 from config import DB_CONFIG
 
-
 print("Loaded config:")
 print(DB_CONFIG)
 
+class DB:
+    conn = None
 
-def get_connection():
+    @staticmethod
+    def get_connection():
+        try:
+            if DB.conn is None or DB.conn.closed:
+                DB.conn = psycopg2.connect(
+                    host=DB_CONFIG["host"],
+                    port=int(DB_CONFIG["port"]),
+                    database=DB_CONFIG["database"],
+                    user=DB_CONFIG["user"],
+                    password=DB_CONFIG["password"]
+                )
+                print("Database connected (persistent)")
 
-    try:
-        conn = psycopg2.connect(
-            host=DB_CONFIG["host"],
-            port=int(DB_CONFIG["port"]),
-            database=DB_CONFIG["database"],
-            user=DB_CONFIG["user"],
-            password=DB_CONFIG["password"]
-        )
+            return DB.conn
 
-        print("Database connected")
-
-        return conn
-
-    except Exception as e:
-        print("Database error:")
-        print(e)
-
-        return None
+        except Exception as e:
+            print("Database error:")
+            print(e)
+            return None

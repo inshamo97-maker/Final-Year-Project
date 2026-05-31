@@ -5,7 +5,7 @@ from datetime import datetime
 
 from recognition import app
 from load_embeddings import load_students
-from db import get_connection
+from db import DB
 
 
 def get_absent_students(
@@ -13,7 +13,7 @@ def get_absent_students(
         hall_id
 ):
 
-    conn = get_connection()
+    conn = DB.get_connection()
     cur = conn.cursor()
 
     try:
@@ -58,7 +58,6 @@ def get_absent_students(
     finally:
 
         cur.close()
-        conn.close()
 
 
 def mark_attendance(
@@ -158,7 +157,7 @@ def mark_attendance(
 
     )
 
-    conn = get_connection()
+    conn = DB.get_connection()
 
     cur = conn.cursor()
 
@@ -301,7 +300,6 @@ def mark_attendance(
     conn.commit()
 
     cur.close()
-    conn.close()
 
     cap.release()
 

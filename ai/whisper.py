@@ -4,7 +4,7 @@ import torch
 import time
 from datetime import datetime
 
-from db import get_connection
+from db import DB
 
 
 print("Loading Silero VAD...")
@@ -90,7 +90,7 @@ def get_candidate_students(
         mic_id
 ):
 
-    conn = get_connection()
+    conn = DB.get_connection()
 
     cur = conn.cursor()
 
@@ -154,7 +154,7 @@ def create_whisper_alert(
 
         return
 
-    conn = get_connection()
+    conn = DB.get_connection()
 
     cur = conn.cursor()
 

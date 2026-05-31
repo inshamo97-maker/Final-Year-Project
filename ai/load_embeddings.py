@@ -1,12 +1,12 @@
 import json
 import numpy as np
-from db import get_connection
+from db import DB
 
 
 def load_students():
 
-    conn=get_connection()
-    cur=conn.cursor()
+    conn = DB.get_connection()
+    cur = conn.cursor()
 
     cur.execute(
         """
@@ -20,33 +20,25 @@ def load_students():
         """
     )
 
-    rows=cur.fetchall()
+    rows = cur.fetchall()
 
-    student_ids=[]
-    student_names=[]
-    embeddings=[]
+    student_ids = []
+    student_names = []
+    embeddings = []
 
-    for student_id,name,emb in rows:
+    for student_id, name, emb in rows:
 
-        student_ids.append(
-            student_id
-        )
+        student_ids.append(student_id)
+        student_names.append(name)
 
-        student_names.append(
-            name
-        )
+        if isinstance(emb, str):
+            emb = json.loads(emb)
 
-        if isinstance(emb,str):
-            emb=json.loads(
-                emb
-            )
-
-        embeddings.append(
-            np.array(emb)
-        )
+        embeddings.append(np.array(emb))
 
     cur.close()
-    conn.close()
+
+    
 
     print(
         "Students loaded:",

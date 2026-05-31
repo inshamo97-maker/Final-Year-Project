@@ -4,7 +4,7 @@ import numpy as np
 import time
 from datetime import datetime
 
-from db import get_connection
+from db import DB
 conn = None
 cur = None
 
@@ -39,7 +39,7 @@ def get_student_name(student_id):
     if student_id in student_cache:
         return student_cache[student_id]
 
-    conn = get_connection()
+    conn = DB.get_connection()
     cur = conn.cursor()
 
     cur.execute(
@@ -54,7 +54,7 @@ def get_student_name(student_id):
     row = cur.fetchone()
 
     cur.close()
-    conn.close()
+    
 
     name = row[0] if row else f"Student {student_id}"
 
@@ -129,7 +129,7 @@ def load_seat_data(
         if age < CACHE_TTL_SECONDS:
             return cached
 
-    conn = get_connection()
+    conn = DB.get_connection()
     cur = conn.cursor()
 
     cur.execute(
@@ -197,7 +197,7 @@ def load_seat_data(
     )
 
     cur.close()
-    conn.close()
+    
 
     return cache
 
@@ -452,7 +452,7 @@ def detect_cheating(
 
     if conn is None:
 
-        conn = get_connection()
+        conn = DB.get_connection()
         cur = conn.cursor()
 
     now = datetime.now()

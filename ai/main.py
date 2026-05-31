@@ -1,112 +1,84 @@
 import cv2
 import time
+import sys
 
 from attendance import mark_attendance
 from seating import verify_seating
 from cheating import detect_cheating
-from whisper import start_whisper_detection
+from db import DB
 
 
-HALL_ID = 1
-EXAM_ID = 1
+EXAM_ID = int(sys.argv[1])
+HALL_ID = int(sys.argv[2])
 
 LATE_CHECK_SECONDS = 1800
 
 
-print(
-    "Starting EMS..."
-)
+print("EMS Worker Started")
+print("Exam ID:", EXAM_ID, "Hall ID:", HALL_ID)
 
 
 attendance_results, frame = mark_attendance(
-
     hall_id=HALL_ID,
     exam_id=EXAM_ID
-
 )
 
 if frame is not None:
 
     verify_seating(
-
         attendance_results=attendance_results,
         frame_shape=frame.shape,
         hall_id=HALL_ID,
         exam_id=EXAM_ID
-
     )
 
 
 exam_start = time.time()
-
 late_check_done = False
 
+cap = cv2.VideoCapture(0)
 
-cap = cv2.VideoCapture(
-    0
-)
+try:
 
+    while True:
 
-while True:
+        ret, frame = cap.read()
 
-    ret, frame = cap.read()
+        if not ret:
+            break
 
-    if not ret:
-
-        break
-
-    detect_cheating(
-
-        frame,
-        hall_id=HALL_ID,
-        exam_id=EXAM_ID
-
-    )
-
-    elapsed = (
-
-        time.time()
-        -
-        exam_start
-
-    )
-
-    if (
-
-        elapsed >= LATE_CHECK_SECONDS
-        and
-        not late_check_done
-
-    ):
-
-        print(
-            "\n30 minute attendance check..."
-        )
-
-        mark_attendance(
-
+        detect_cheating(
+            frame,
             hall_id=HALL_ID,
-            exam_id=EXAM_ID,
-            absent_only=True
-
+            exam_id=EXAM_ID
         )
 
-        late_check_done = True
+        elapsed = time.time() - exam_start
 
-    cv2.imshow(
-        "EMS",
-        frame
-    )
+        if elapsed >= LATE_CHECK_SECONDS and not late_check_done:
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("30 minute attendance check...")
 
-        break
+            mark_attendance(
+                hall_id=HALL_ID,
+                exam_id=EXAM_ID,
+                absent_only=True
+            )
 
+            late_check_done = True
 
-cap.release()
+        cv2.imshow("EMS", frame)
 
-cv2.destroyAllWindows()
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-print(
-    "EMS finished"
-)
+finally:
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    conn = DB.get_connection()
+    if conn:
+        conn.close()
+
+    print("EMS Worker Finished")
