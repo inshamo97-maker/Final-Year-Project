@@ -43,7 +43,7 @@ async function createViolationAndAlertFromAiEvent({
   event_id,
 }) {
   const severity = computeSeverity(type, confidence);
-  const status = computeInitialStatus(severity, confidence);
+ const status = "confirmed";
 
   const cols = await getViolationColumns();
 

@@ -55,14 +55,21 @@ async function getStudentsForInvigilator(req, res) {
 
       if (!hallIds.length) return res.json([]);
 
-      const result = await pool.query(
-        `
-        ${STUDENTS_WITH_SEATING_SQL}
-        WHERE COALESCE(ca.hall_id, s.hall_id) = ANY($1::int[])
-        ORDER BY s.id ASC
-        `,
-        [hallIds]
-      );
+     const result = await pool.query(
+  `
+  ${STUDENTS_WITH_SEATING_SQL}
+  WHERE COALESCE(ca.hall_id, s.hall_id) = ANY($1::int[])
+    AND (
+      ca.exam_id IN (
+        SELECT id
+        FROM exams
+        WHERE status IN ('active','scheduled')
+      )
+    )
+  ORDER BY s.id ASC
+  `,
+  [hallIds]
+);
 
       return res.json(result.rows);
     }

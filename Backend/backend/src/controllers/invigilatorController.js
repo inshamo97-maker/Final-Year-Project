@@ -31,7 +31,7 @@ async function getAllInvigilators(req, res) {
   try {
     const where = await getInvigilatorFilterSql();
     const result = await pool.query(
-      `SELECT id, name, email, phone_number, department, last_login
+      `SELECT id, name, email, phone_number, department, hall_id, last_login
        FROM users
        ${where}
        ORDER BY id ASC`
@@ -52,7 +52,7 @@ async function getInvigilatorById(req, res) {
     const where = await getInvigilatorFilterSql();
     const andFilter = where ? `${where} AND id = $1` : " WHERE id = $1";
     const result = await pool.query(
-      `SELECT id, name, email, phone_number, department, last_login
+      `SELECT id, name, email, phone_number, department, hall_id, last_login
        FROM users
        ${andFilter}`,
       [id]
@@ -69,8 +69,14 @@ async function getInvigilatorById(req, res) {
 // CREATE INVIGILATOR (MANUAL)
 // ─────────────────────────────────────────────
 async function createInvigilator(req, res) {
-  const { name, email, password, phone_number, department } = req.body;
-
+ const {
+  name,
+  email,
+  password,
+  phone_number,
+  department,
+  hall_id
+} = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: "name, email, and password are required" });
   }
@@ -82,10 +88,10 @@ async function createInvigilator(req, res) {
     const hashedPassword = await hashPassword(password);
 
     const result = await pool.query(
-      `INSERT INTO users (name, email, password, phone_number, department)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, phone_number, department`,
-      [name, email, hashedPassword, phone_number || null, department || null]
+      `INSERT INTO users (name,email,password,phone_number,department,hall_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, name, email, phone_number, department, hall_id`,
+      [name, email, hashedPassword, phone_number || null, department || null, hall_id || null]
     );
 
     res.status(201).json({ message: "Invigilator created", invigilator: result.rows[0] });
@@ -101,7 +107,7 @@ async function createInvigilator(req, res) {
 // ─────────────────────────────────────────────
 async function updateInvigilator(req, res) {
   const { id } = req.params;
-  const { name, email, password, phone_number, department } = req.body;
+  const { name, email, password, phone_number, department ,hall_id} = req.body;
 
   try {
     const existing = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
@@ -125,6 +131,8 @@ async function updateInvigilator(req, res) {
     if (email)        { fields.push(`email = $${counter++}`);        values.push(email); }
     if (phone_number) { fields.push(`phone_number = $${counter++}`); values.push(phone_number); }
     if (department)   { fields.push(`department = $${counter++}`);   values.push(department); }
+    if (hall_id)      { fields.push(`hall_id = $${counter++}`);      values.push(hall_id); }
+
     if (password) {
       const hashed = await hashPassword(password);
       fields.push(`password = $${counter++}`);
@@ -136,7 +144,7 @@ async function updateInvigilator(req, res) {
     }
 
     values.push(id);
-    const query = `UPDATE users SET ${fields.join(", ")} WHERE id = $${counter} RETURNING id, name, email, phone_number, department`;
+    const query = `UPDATE users SET ${fields.join(", ")} WHERE id = $${counter} RETURNING id, name, email, phone_number, department, hall_id`;
 
     const result = await pool.query(query, values);
     res.json({ message: "Invigilator updated", invigilator: result.rows[0] });

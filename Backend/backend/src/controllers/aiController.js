@@ -1,7 +1,7 @@
 const pool = require("../db");
 const { randomUUID } = require("crypto");
 const { ok } = require("../utils/response");
-const { createViolationAndAlertFromAiEvent } = require("../services/violationEngine");
+//const { createViolationAndAlertFromAiEvent } = require("../services/violationEngine");
 const { aiAlertSchema, attendanceSchema, embeddingSchema } = require("../validation/aiSchemas");
 
 function normalizeZodError(err) {
@@ -58,49 +58,27 @@ async function ingestAiAlert(req, res) {
   }
 
   const aiAlert = insert.rows[0];
-
-  const { violation, severity, status } =
-    await createViolationAndAlertFromAiEvent({
-      event_id,
-      type,
-      confidence,
-      timestamp,
-      hall_id,
-      student_id,
-      exam_id,
-    });
-
-  const updatedAlert = await pool.query(
-    `UPDATE ai_alerts SET violation_id = $1 WHERE event_id = $2 RETURNING *`,
-    [violation.id, event_id]
-  );
-  const alert = updatedAlert.rows[0] || aiAlert;
+  const alert = aiAlert;
 
   const io = req.app.get("io");
 
-  if (io) {
-    io.to(`hall:${hall_id}`).emit("ai-alert", {
-      event_id,
-      type,
-      confidence,
-      timestamp,
-      hall_id,
-      exam_id: exam_id ?? null,
-      student_id: student_id ?? null,
-      severity: isUnknownFace ? "high" : severity,
-      status: alert.status || "pending",
-      violation_id: violation.id,
-      alert_id: alert.id,
-    });
-  }
+ if (io) {
+  io.to(`hall:${hall_id}`).emit("ai-alert", {
+    event_id,
+    type,
+    confidence,
+    timestamp,
+    hall_id,
+    exam_id: exam_id ?? null,
+    student_id: student_id ?? null,
+    status: "pending",
+    alert_id: alert.id,
+  });
+}
 
-  return ok(res, {
-    ai_alert: alert,
-    violation,
-    alert,
-    severity,
-    status
-  }, 201);
+ return ok(res, {
+  ai_alert: alert,
+}, 201);
 }
 
 async function listAiAlerts(req, res) {
@@ -111,6 +89,7 @@ async function listAiAlerts(req, res) {
     ORDER BY created_at DESC
     `
   );
+  console.log("USING AI CONTROLLER");
   return ok(res, result.rows, 200);
 }
 

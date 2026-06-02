@@ -1,6 +1,7 @@
 const pool = require('../db');
 const { randomUUID } = require('crypto');
 const { filterByHallScope, canAccessHall } = require('../utils/hallScope');
+const { createViolationAndAlertFromAiEvent } = require('../services/violationEngine');
 
 const getAllAlerts = async (req, res) => {
   try {
@@ -18,6 +19,7 @@ const getAllAlerts = async (req, res) => {
     const filtered = filterByHallScope(result.rows, req.user);
     console.log("[scope] ai_alerts results", { before: result.rows.length, after: filtered.length });
     res.json(filtered);
+     console.log("USING ALERT CONTROLLER");
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -75,13 +77,48 @@ const updateAlertStatus = async (req, res) => {
     const { status } = req.body;
 
     if (!status) return res.status(400).json({ error: 'status is required' });
-    if (!['pending', 'reviewed'].includes(status)) {
-      return res.status(400).json({ error: 'status must be pending or reviewed' });
-    }
-
+    if (!['pending', 'confirmed', 'dismissed'].includes(status)) {
+    return res.status(400).json({
+    error: 'status must be pending, confirmed or dismissed'
+  });
+}
     const existing = await pool.query('SELECT * FROM ai_alerts WHERE id = $1', [id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Alert not found' });
 
+    const alert = existing.rows[0];
+
+    // If reviewing for the first time, create a violation
+if (status === 'confirmed' && !alert.violation_id) {
+        const { violation } = await createViolationAndAlertFromAiEvent({
+        event_id: alert.event_id,
+        type: alert.type,
+        confidence: alert.confidence,
+        timestamp: alert.timestamp,
+        hall_id: alert.hall_id,
+        student_id: alert.student_id,
+        exam_id: alert.exam_id,
+      });
+
+      // Link violation to alert
+      const result = await pool.query(
+        'UPDATE ai_alerts SET status = $1, violation_id = $2 WHERE id = $3 RETURNING *',
+        [status, violation.id, id]
+      );
+      return res.json(result.rows[0]);
+    }
+
+    if (status === 'confirmed' && alert.violation_id) {
+  const result = await pool.query(
+    `UPDATE ai_alerts
+     SET status = $1
+     WHERE id = $2
+     RETURNING *`,
+    [status, id]
+  );
+
+  return res.json(result.rows[0]);
+}
+    // Normal status update for pending
     const result = await pool.query(
       'UPDATE ai_alerts SET status = $1 WHERE id = $2 RETURNING *',
       [status, id]

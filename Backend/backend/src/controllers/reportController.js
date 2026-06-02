@@ -45,7 +45,13 @@ async function queryComputedReports(params = []) {
       EXTRACT(EPOCH FROM ((e.date + e.end_time) - (e.date + e.start_time))) AS duration_seconds,
       COUNT(DISTINCT v.id) AS total_violations,
       COUNT(DISTINCT a.id) AS total_alerts,
-      COUNT(DISTINCT a.id) AS reviewed_alerts,
+
+COUNT(
+  DISTINCT CASE
+    WHEN a.status IN ('confirmed','dismissed','reviewed')
+    THEN a.id
+  END
+) AS reviewed_alerts,
       COUNT(DISTINCT att.student_id) AS attendance_count,
       COALESCE(
         NULLIF(COUNT(DISTINCT sa.student_id), 0),
@@ -54,6 +60,8 @@ async function queryComputedReports(params = []) {
       ) AS students_monitored
     FROM exams e
     LEFT JOIN exam_halls eh ON eh.id = e.hall_id
+    LEFT JOIN ai_alerts a
+  ON a.hall_id = e.hall_id
     LEFT JOIN seat_allocations sa
       ON sa.exam_id = e.id
       OR (sa.exam_id IS NULL AND sa.hall_id = e.hall_id)
@@ -61,13 +69,17 @@ async function queryComputedReports(params = []) {
       ON v.hall_id = e.hall_id
       AND v.timestamp >= (e.date + e.start_time)
       AND v.timestamp <= (e.date + e.end_time)
-LEFT JOIN ai_alerts a ON a.violation_id = v.id
-    LEFT JOIN attendance att
-      ON att.student_id IS NOT NULL
-      AND (
-        att.exam_id = e.id::text
-        OR (att.exam_id IS NULL AND att.hall_id = e.hall_id AND DATE(att."timestamp") = e.date)
-      )
+
+   LEFT JOIN attendance att
+  ON att.student_id IS NOT NULL
+  AND (
+    att.exam_id = e.id::text
+    OR (
+      att.exam_id IS NULL
+      AND att.hall_id = e.hall_id
+      AND att.date = e.date
+    )
+  )
     ${whereExam}
     GROUP BY e.id, e.name, e.date, e.start_time, e.end_time, e.hall_id, eh.hall_number
     ORDER BY e.date DESC, e.start_time DESC
@@ -82,6 +94,7 @@ async function getReports(req, res) {
   try {
     console.log("[scope] reports", { role: req.user?.role, hallIds: req.user?.hallIds || [] });
     const reports = await queryComputedReports();
+    console.log("REPORTS GENERATED:", reports);
     const before = reports.length;
     const filtered = filterByHallScope(reports, req.user);
     console.log("[scope] reports results", { before, after: filtered.length });

@@ -29,11 +29,14 @@ async function authenticate(req, res, next) {
 
     let hallIds = [];
     if (!isAdmin) {
-      const hallResult = await pool.query(
-        "SELECT hall_id FROM invigilator_halls WHERE invigilator_id = $1 ORDER BY hall_id ASC",
-        [decoded.id]
-      );
-      hallIds = hallResult.rows.map((r) => r.hall_id);
+     const hallResult = await pool.query(
+  "SELECT hall_id FROM users WHERE id = $1",
+  [decoded.id]
+);
+
+hallIds = hallResult.rows[0]?.hall_id
+  ? [hallResult.rows[0].hall_id]
+  : [];
     }
 
     req.user = {
