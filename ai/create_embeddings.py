@@ -2,14 +2,13 @@ import os
 import cv2
 import json
 from insightface.app import FaceAnalysis
-from db import get_connection
-
-conn = get_connection()
+from db import DB
+conn = DB.get_connection()
 
 app = FaceAnalysis(name='buffalo_s')
 app.prepare(ctx_id=-1)
 
-PHOTO_FOLDER = r"C:\Users\salee\Downloads\FULL Project\photos\photosHome"
+PHOTO_FOLDER = r"C:\Users\salee\Downloads\FULL Project\photos"
 
 cur=conn.cursor()
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from db import DB
-
+from speaker_alert import trigger_alert
 def verify_seating(
     attendance_results,
     frame_shape,
@@ -42,7 +42,6 @@ def verify_seating(
     if not rows_raw:
         print("❌ FILTER IS THE PROBLEM (NO DATA MATCHING)")
         cur.close()
-
         return
 
     seat_map = {(r, c): sid for sid, r, c in rows_raw}
@@ -79,17 +78,110 @@ def verify_seating(
 
         if not expected:
             print("⚠ NOT IN SEAT MAP")
+
+            cur.execute("""
+                INSERT INTO ai_alerts
+                (
+                    event_id,
+                    type,
+                    confidence,
+                    timestamp,
+                    hall_id,
+                    exam_id,
+                    student_id,
+                    violation_id,
+                    created_at
+                )
+                VALUES
+                (
+                    gen_random_uuid(),
+                    %s,%s,%s,%s,%s,%s,%s,%s
+                )
+            """, (
+                "seating_unknown_student",
+                1.0,
+                now,
+                hall_id,
+                exam_id,
+                student_id,
+                None,
+                now
+            ))
+
             continue
 
         exp_row, exp_col = expected
 
         if (exp_row != detected_row or exp_col != detected_col):
+
             print("❌ SEAT VIOLATION")
+            trigger_alert(
+                roll_number=str(student_id),
+                reason="you are in the wrong seat. Please move to your correct seat",
+                exam_id=str(exam_id)
+)
+            cur.execute("""
+                INSERT INTO ai_alerts
+                (
+                    event_id,
+                    type,
+                    confidence,
+                    timestamp,
+                    hall_id,
+                    exam_id,
+                    student_id,
+                    violation_id,
+                    created_at
+                )
+                VALUES
+                (
+                    gen_random_uuid(),
+                    %s,%s,%s,%s,%s,%s,%s,%s
+                )
+            """, (
+                "seating_violation",
+                1.0,
+                now,
+                hall_id,
+                exam_id,
+                student_id,
+                None,
+                now
+            ))
+
         else:
             print("✔ OK")
 
+            cur.execute("""
+                INSERT INTO ai_alerts
+                (
+                    event_id,
+                    type,
+                    confidence,
+                    timestamp,
+                    hall_id,
+                    exam_id,
+                    student_id,
+                    violation_id,
+                    created_at
+                )
+                VALUES
+                (
+                    gen_random_uuid(),
+                    %s,%s,%s,%s,%s,%s,%s,%s
+                )
+            """, (
+                "seating_ok",
+                1.0,
+                now,
+                hall_id,
+                exam_id,
+                student_id,
+                None,
+                now
+            ))
+
     conn.commit()
     cur.close()
-    
 
     print("\nSeating verification complete")
