@@ -20,6 +20,17 @@ const TABS = [
 const examStatusVariant = { scheduled: "default", active: "success", ended: "secondary" };
 const hallStatusVariant  = { open: "success", closed: "secondary" };
 
+const seniorPrograms = [
+  "FSC Pre-Medical",
+  "FSC Pre-Engineering",
+  "ICS"
+];
+
+const matricPrograms = [
+  "Sciences",
+  "Humanities"
+];
+
 export default function AdminExamSchedule() {
   const user = getCurrentUser() || { name: "Admin", id: "admin", role: "admin" };
 
@@ -53,11 +64,21 @@ export default function AdminExamSchedule() {
 
   const hallName = (id) => halls.find((h) => String(h.id) === String(id))?.hallNumber || "—";
 
+  // ── Determine program options based on class level ───────────────────────────
+  const currentClassLevel = editing?.classLevel;
+  const programOptions = ["9", "10"].includes(String(currentClassLevel || ""))
+    ? matricPrograms
+    : seniorPrograms;
+
   // ── Field definitions ───────────────────────────────────────────────────────
   const fields = useMemo(() => {
     if (tab === "exams") return [
       { name: "name",      label: "Exam Name", type: "text",   required: true },
       { name: "subject",   label: "Subject",   type: "text",   required: true },
+      { name: "classLevel", label: "Class Level", type: "select", required: true,
+        options: ["9", "10", "11", "12"].map((level) => ({ value: level, label: `Class ${level}` })) },
+      { name: "programName", label: "Program Name", type: "select", required: true,
+        options: programOptions.map((p) => ({ value: p, label: p })) },
       { name: "date",      label: "Date",      type: "date",   required: true },
       { name: "startTime", label: "Start",     type: "time",   required: true },
       { name: "endTime",   label: "End",       type: "time",   required: true },
@@ -73,13 +94,15 @@ export default function AdminExamSchedule() {
       { name: "status",     label: "Status",      type: "select",
         options: [{ value: "open", label: "Open" }, { value: "closed", label: "Closed" }] },
     ];
-  }, [tab, halls]);
+  }, [tab, halls, programOptions]);
 
   // ── Columns ─────────────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     if (tab === "exams") return [
       { header: "Name",    accessor: "name"    },
       { header: "Subject", accessor: "subject" },
+      { header: "Class",   accessor: (r) => `Class ${r.classLevel}` },
+      { header: "Program", accessor: "programName" },
       { header: "Date",    accessor: "date"    },
       { header: "Start",   accessor: "startTime" },
       { header: "End",     accessor: "endTime"   },

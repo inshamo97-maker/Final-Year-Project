@@ -50,7 +50,7 @@ export default function InvigilatorStudents() {
   const [loading, setLoading]         = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [hallFilter, setHallFilter]   = useState("all");
+
   const [selectedStudent, setSelectedStudent] = useState(null);
 
   // ── Load data ───────────────────────────────────────────────────────────────
@@ -73,7 +73,6 @@ export default function InvigilatorStudents() {
   }, []);
 
   // ── Unique hall names for filter dropdown ───────────────────────────────────
-  const hallOptions = [...new Set(students.map((s) => s.examHall).filter((h) => h && h !== "—"))];
 
   // ── Filtered list ───────────────────────────────────────────────────────────
   const filtered = students.filter((s) => {
@@ -83,18 +82,15 @@ export default function InvigilatorStudents() {
       s.studentId.toLowerCase().includes(q) ||
       s.registrationNumber.toLowerCase().includes(q);
     const matchStatus = statusFilter === "all" || s.status === statusFilter;
-    const matchHall   = hallFilter   === "all" || s.examHall === hallFilter;
-    return matchSearch && matchStatus && matchHall;
+    return matchSearch && matchStatus;
   });
 
   const clearFilters = () => {
-    setSearchQuery("");
-    setStatusFilter("all");
-    setHallFilter("all");
+  setSearchQuery("");
+setStatusFilter("all");
   };
 
-  const hasFilters = statusFilter !== "all" || hallFilter !== "all" || searchQuery;
-
+const hasFilters = statusFilter !== "all" || searchQuery;
   // ── Columns ─────────────────────────────────────────────────────────────────
   const columns = [
     { header: "Roll No",   accessor: "studentId"  },
@@ -139,15 +135,7 @@ export default function InvigilatorStudents() {
               </SelectContent>
             </Select>
 
-            <Select value={hallFilter} onValueChange={setHallFilter}>
-              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Hall" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Halls</SelectItem>
-                {hallOptions.map((h) => (
-                  <SelectItem key={h} value={h}>{h}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        
 
             {hasFilters && (
               <Button variant="ghost" size="icon" onClick={clearFilters}>

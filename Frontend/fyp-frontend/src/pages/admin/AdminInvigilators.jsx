@@ -11,12 +11,23 @@ import * as api from "@/services/api";
 import { getCurrentUser } from "@/services/api";
 import { toast } from "sonner";
 
-const fields = [
-  { name: "name",       label: "Name",       type: "text",     required: true },
-  { name: "email",      label: "Email",      type: "email",    required: true },
-  { name: "password",   label: "Password",   type: "password", required: false, placeholder: "Leave blank to keep" },
-  { name: "phone",      label: "Phone",      type: "text" },
+const buildFields = (halls) => [
+  { name: "name", label: "Name", type: "text", required: true },
+  { name: "email", label: "Email", type: "email", required: true },
+  { name: "password", label: "Password", type: "password", required: false },
+  { name: "phone", label: "Phone", type: "text" },
   { name: "department", label: "Department", type: "text" },
+
+  {
+    name: "hallId",
+    label: "Assigned Hall",
+    type: "select",
+    required: true,
+    options: halls.map(h => ({
+      value: String(h.id),
+      label: h.hallNumber
+    }))
+  }
 ];
 
 export default function AdminInvigilators() {
@@ -26,10 +37,19 @@ export default function AdminInvigilators() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [halls, setHalls] = useState([]);
+const reload = async () => {
+  setLoading(true);
 
-  const reload = async () => {
-    setLoading(true);
-    try { setRows(await api.getInvigilators()); }
+  try {
+    const [invigilators, hallList] = await Promise.all([
+      api.getInvigilators(),
+      api.getExamHalls()
+    ]);
+
+    setRows(invigilators);
+    setHalls(hallList);
+  }
     catch (e) { toast.error(e.message || "Failed to load"); }
     finally { setLoading(false); }
   };
@@ -96,7 +116,7 @@ export default function AdminInvigilators() {
         open={formOpen}
         onOpenChange={setFormOpen}
         title={editing ? "Edit Invigilator" : "Add Invigilator"}
-        fields={fields}
+        fields={buildFields(halls)}
         initialValues={editing || {}}
         onSubmit={onSubmit}
       />

@@ -22,8 +22,9 @@ export default function AdminAlerts() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [r, i] = await Promise.all([api.getAiAlerts(), api.getInvigilators()]);
-      setRows(r); setInvs(i);
+      const [allAlerts, i] = await Promise.all([api.getAiAlerts(), api.getInvigilators()]);
+      // Filter to show only pending alerts (hide reviewed ones)
+      setRows(allAlerts); setInvs(i);
     } catch (e) { toast.error(e.message || "Failed to load"); }
     finally { setLoading(false); }
   };
@@ -31,10 +32,7 @@ export default function AdminAlerts() {
 
   const invName = (id) => invs.find((x) => x.id === id)?.name || id || "—";
 
-  const markReviewed = async (row) => {
-    try { await api.updateAlertStatus(row.id, "reviewed"); toast.success("Marked reviewed"); reload(); }
-    catch (e) { toast.error(e.message || "Update failed"); }
-  };
+
   const onDelete = async (row) => {
     try { await api.deleteAlert(row.id); toast.success("Deleted"); reload(); }
     catch (e) { toast.error(e.message || "Delete failed"); }
@@ -54,9 +52,6 @@ export default function AdminAlerts() {
               { header: "", className: "w-56",
                 accessor: (r) => (
                   <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="outline" disabled={r.status === "reviewed"} onClick={() => markReviewed(r)}>
-                      <Check className="h-3.5 w-3.5 mr-1" /> {r.status === "reviewed" ? "Reviewed" : "Mark reviewed"}
-                    </Button>
                     <Button size="sm" variant="destructive" onClick={() => setConfirmDel(r)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                 ),

@@ -29,12 +29,28 @@ export default function AdminReports() {
   }, []);
 
   const filteredReports = reports.filter((report) => {
-    const matchesHall = hallFilter === "all" || report.examHall === hallFilter;
-    const matchesStartDate = !startDate || report.date >= startDate;
-    const matchesEndDate = !endDate || report.date <= endDate;
-    return matchesHall && matchesStartDate && matchesEndDate;
-  });
+  const reportDate = report.date
+    ? new Date(report.date)
+    : null;
 
+  const matchesHall =
+    hallFilter === "all" ||
+    report.examHall === hallFilter;
+
+  const matchesStartDate =
+    !startDate ||
+    reportDate >= new Date(startDate);
+
+  const matchesEndDate =
+    !endDate ||
+    reportDate <= new Date(endDate);
+
+  return (
+    matchesHall &&
+    matchesStartDate &&
+    matchesEndDate
+  );
+});
   const totalAlerts = filteredReports.reduce((sum, r) => sum + r.totalAlerts, 0);
   const reviewedAlerts = filteredReports.reduce((sum, r) => sum + r.reviewedAlerts, 0);
   const totalStudents = filteredReports.reduce((sum, r) => sum + r.studentsMonitored, 0);

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { getCurrentUser } from "@/services/api";
 import * as api from "@/services/api";
-
+import { uploadSeatAllocationsCsv } from "@/services/api";
 const createInitialSeating = (rows, cols) => {
   return Array.from({ length: rows }, (_, rowIndex) =>
     Array.from({ length: cols }, (_, colIndex) => ({
@@ -30,8 +30,6 @@ const normalize = (value) => String(value ?? "").trim().toLowerCase();
 
 export default function AdminSeating() {
   const user = getCurrentUser() || { name: "Prof. Michael Chen", id: "ADM001", role: "admin" };
-  const [seatingPlanUploaded, setSeatingPlanUploaded] = useState(true);
-  const [studentsUploaded, setStudentsUploaded] = useState(true);
   const [halls, setHalls] = useState([]);
   const [students, setStudents] = useState([]);
   const [exams, setExams] = useState([]);
@@ -42,7 +40,6 @@ export default function AdminSeating() {
   const [selectedSeat, setSelectedSeat] = useState(null);
   const [studentSearch, setStudentSearch] = useState("");
   const seatingPlanInputRef = useRef(null);
-  const studentsInputRef = useRef(null);
 
  useEffect(() => {
   api.getSeatingHalls()
@@ -96,54 +93,30 @@ useEffect(() => {
   }
 }, [selectedHallId, selectedExamId, availableExams]);
 
-  const handleSeatingPlanUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-  const newHalls = await api.uploadSeatingPlan(file);
+ const handleSeatAllocationUpload = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-const safeHalls = Array.isArray(newHalls) ? newHalls : [];
+  try {
+    const result = await uploadSeatAllocationsCsv(file);
 
-setHalls(safeHalls);
+    console.log("UPLOAD RESULT:", result);
 
-if (safeHalls.length > 0) {
-  setSelectedHallId(String(safeHalls[0].id));
-}
+    toast.success(
+      `Inserted: ${result.inserted}, Failed: ${result.failed}`
+    );
 
-setSeatingPlanUploaded(true);
-    toast.success(`Seating plan uploaded: ${file.name}`);
-  };
-
-  const handleStudentsUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const newStudents = await api.uploadStudentsList(file);
-    setStudents(newStudents); setStudentsUploaded(true);
-    toast.success(`Students file uploaded: ${file.name}`);
-    autoMapStudents(newStudents);
-  };
+  } catch (err) {
+    console.error(err);
+    toast.error(err?.message || "Upload failed");
+  }
+};
+ 
 
   const studentMatchesFilters = (student) =>
     String(student.classLevel ?? "") === String(selectedClassLevel) &&
     normalize(student.programName) === normalize(selectedProgramName);
 
-  const autoMapStudents = (studentList) => {
-    const eligibleStudents = studentList.filter(studentMatchesFilters);
-    setHalls((prev) => {
-      let studentIndex = 0;
-      return prev.map((hall) => {
-        if (String(hall.id) !== String(selectedHallId)) return hall;
-        const newSeats = hall.seats.map((row) => row.map((seat) => {
-          if (studentIndex < eligibleStudents.length) {
-            const student = eligibleStudents[studentIndex]; studentIndex++;
-            return { ...seat, studentId: student.id, studentName: student.name };
-          }
-          return seat;
-        }));
-        return { ...hall, seats: newSeats };
-      });
-    });
-    toast.success("Students automatically mapped to seats");
-  };
 
   const handleAssignStudent = (studentId, studentName) => {
     if (!selectedSeat) return;
@@ -206,40 +179,9 @@ toast.success(
 const assignedCount =selectedHall?.seats?.flat()?.filter((s) => s.studentId).length || 0;
   const totalSeats = selectedHall ? selectedHall.rows * selectedHall.cols : 0;
 
-  if (!seatingPlanUploaded) {
-    return (
-      <DashboardLayout userRole={user.role} userName={user.name} userId={user.id} pageTitle="Manage Seating Plan">
-        <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
-          <div className="text-center space-y-6 max-w-md">
-            <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full flex items-center justify-center"><FileSpreadsheet className="h-10 w-10 text-primary" /></div>
-            <div><h2 className="text-xl font-semibold text-foreground mb-2">Upload Seating Plan</h2><p className="text-muted-foreground text-sm">Upload a seating plan file (CSV/Excel) to define exam halls and seat layouts</p></div>
-            <input ref={seatingPlanInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleSeatingPlanUpload} className="hidden" />
-            <Button onClick={() => seatingPlanInputRef.current?.click()} size="lg"><Upload className="h-4 w-4 mr-2" />Upload Seating Plan</Button>
-          </div>
-        </div>
-      </DashboardLayout>
-    );
-  }
+ 
 
-  if (!studentsUploaded) {
-    return (
-      <DashboardLayout userRole={user.role} userName={user.name} userId={user.id} pageTitle="Manage Seating Plan">
-        <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
-          <div className="text-center space-y-6 max-w-md">
-            <div className="flex justify-center gap-4 mb-4">
-              <div className="flex items-center gap-2 text-success"><div className="w-6 h-6 bg-success rounded-full flex items-center justify-center"><Check className="h-4 w-4 text-success-foreground" /></div><span className="text-sm font-medium">Seating Plan</span></div>
-              <div className="w-8 h-px bg-border self-center" />
-              <div className="flex items-center gap-2 text-muted-foreground"><div className="w-6 h-6 bg-muted rounded-full flex items-center justify-center text-xs font-medium">2</div><span className="text-sm">Students</span></div>
-            </div>
-            <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full flex items-center justify-center"><User className="h-10 w-10 text-primary" /></div>
-            <div><h2 className="text-xl font-semibold text-foreground mb-2">Upload Students List</h2><p className="text-muted-foreground text-sm">Upload a students file (CSV/Excel) to automatically map students to seats</p></div>
-            <input ref={studentsInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleStudentsUpload} className="hidden" />
-            <Button onClick={() => studentsInputRef.current?.click()} size="lg"><Upload className="h-4 w-4 mr-2" />Upload Students List</Button>
-          </div>
-        </div>
-      </DashboardLayout>
-    );
-  }
+
 
   if (!selectedHall) {
     return (
@@ -301,10 +243,8 @@ const assignedCount =selectedHall?.seats?.flat()?.filter((s) => s.studentId).len
               </Select>
             </div>
             <div className="flex flex-wrap gap-2 sm:gap-3">
-              <input ref={seatingPlanInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleSeatingPlanUpload} className="hidden" />
-              <input ref={studentsInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleStudentsUpload} className="hidden" />
-              <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => studentsInputRef.current?.click()}><FileSpreadsheet className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Upload Student Excel File</span></Button>
-              <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => seatingPlanInputRef.current?.click()}><Upload className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Upload New Plan</span></Button>
+              <input ref={seatingPlanInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleSeatAllocationUpload} className="hidden" />
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => seatingPlanInputRef.current?.click()}><Upload className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Upload Seat Allocation CSV</span></Button>
               <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={handleReset}><RotateCcw className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Reset Layout</span></Button>
               <Button size="sm" className="text-xs sm:text-sm" onClick={handleSave}><Save className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Save Seating Plan</span></Button>
             </div>

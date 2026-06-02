@@ -80,9 +80,23 @@ async function request(path, { method = "GET", body, headers, auth = true, formD
 // Data Transform Layer (API format ↔ Frontend format)
 // ───────────────────────────────────────────────────────────────────────────────
 
-const invigilatorFromApi = (x) => x ? { id: String(x.id), name: x.name, email: x.email, phone: x.phone_number ?? x.phone ?? "", department: x.department ?? "", lastLogin: x.last_login ?? x.lastLogin ?? null } : null;
-const invigilatorToApi   = (x) => x ? { name: x.name, email: x.email, password: x.password, phone_number: x.phone_number ?? x.phone ?? null, department: x.department ?? null } : {};
-
+const invigilatorFromApi = (x) => x ? {
+  id: String(x.id),
+  name: x.name,
+  email: x.email,
+  phone: x.phone_number ?? x.phone ?? "",
+  department: x.department ?? "",
+  hallId: x.hall_id ?? x.hallId ?? null,
+  lastLogin: x.last_login ?? x.lastLogin ?? null
+} : null;
+const invigilatorToApi = (x) => x ? {
+  name: x.name,
+  email: x.email,
+  password: x.password,
+  phone_number: x.phone_number ?? x.phone ?? null,
+  department: x.department ?? null,
+  hall_id: x.hallId ?? null
+} : {};
 const hallFromApi = (x) => x ? { id: String(x.id), hallNumber: x.hall_number ?? x.hallNumber, floor: x.floor_number ?? x.floor ?? null, capacity: x.capacity, location: x.location ?? "", status: x.status ?? "open" } : null;
 const hallToApi   = (x) => x ? { hall_number: x.hall_number ?? x.hallNumber, floor_number: x.floor_number ?? x.floor ?? null, capacity: x.capacity, location: x.location ?? null } : {};
 
@@ -93,7 +107,7 @@ function timeForInput(value) {
   return match ? match[1] : text;
 }
 
-const examFromApi = (x) => x ? { id: String(x.id), name: x.name, subject: x.subject, date: x.date
+const examFromApi = (x) => x ? { id: String(x.id), name: x.name, subject: x.subject, classLevel: x.class_level ?? x.classLevel, programName: x.program_name ?? x.programName, date: x.date
   ? new Date(x.date).toLocaleDateString("en-CA")
   : x.date, startTime: timeForInput(x.start_time ?? x.startTime), endTime: timeForInput(x.end_time ?? x.endTime), status: x.status, hallId: x.hall_id ?? x.hallId } : null;
 const examToApi   = (x) => x ? { name: x.name, subject: x.subject, date: x.date, start_time: x.start_time ?? x.startTime, end_time: x.end_time ?? x.endTime, status: x.status, hall_id: x.hall_id ?? x.hallId } : {};
@@ -148,6 +162,8 @@ function examPayloadToApi(x) {
   return {
     name: x.name,
     subject: x.subject,
+    class_level: x.class_level ?? x.classLevel,
+    program_name: x.program_name ?? x.programName,
     date: x.date,
 
     start_time: x.start_time ?? x.startTime,
@@ -542,9 +558,10 @@ export async function getInvigilatorHallDetails() {
   const cameras = (camerasRes.status === "fulfilled" ? (camerasRes.value?.cameras || camerasRes.value || []) : []);
   const alerts = (alertsRes.status === "fulfilled" ? (alertsRes.value?.alerts || alertsRes.value || []) : []);
   const students = (studentsRes.status === "fulfilled" ? (studentsRes.value || []) : []);
-
   return halls.map((hall) => {
-    const hallCameras = cameras.filter(c => String(c.hallId) === String(hall.id));
+const hallCameras = cameras.filter(
+  c => String(c.hall_id ?? c.hallId) === String(hall.id)
+);
     const hallAlerts = alerts.filter(a => String(a.hallId) === String(hall.id));
 
     const hallStudents = students.filter(s =>
@@ -603,13 +620,17 @@ export async function getInvigilatorHallDetails() {
       name: hall.name || `${hall.hall_number || ""} - ${hall.location || ""}`,
       totalStudents: hallStudents.length,
       capacity: hall.capacity || 0,
-      activeCameras: hallCameras.filter(c => c.isActive).length,
+      activeCameras: hallCameras.filter(
+  c => c.is_active ?? c.isActive
+).length,
       currentAlerts: hallAlerts.filter(a => a.status === "pending").length,
       seating,
       cameras: hallCameras.map(c => ({
         id: c.id,
         name: c.position || "Camera",
-        status: c.isActive ? "active" : "inactive",
+        status: (c.is_active ?? c.isActive)
+  ? "active"
+  : "inactive",
       })),
     };
   });
@@ -748,6 +769,22 @@ export async function deleteStudent(id) {
     `/students/${id}`,
     {
       method:"DELETE"
+    }
+  );
+}
+
+
+
+export async function uploadSeatAllocationsCsv(file) {
+  const fd = new FormData();
+
+  fd.append("file", file);
+
+  return request(
+    "/seat-allocation/upload/csv",
+    {
+      method: "POST",
+      formData: fd
     }
   );
 }
