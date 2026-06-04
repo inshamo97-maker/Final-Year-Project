@@ -118,9 +118,25 @@ const cameraToApi   = (x) => x ? { position: x.position, ip_address: x.ip_addres
 const speakerFromApi = (x) => x ? { id: String(x.id), label: x.label, ipAddress: x.ip_address ?? x.ipAddress, volume: x.volume_level ?? x.volume ?? 50, status: x.status, hallId: x.hall_id ?? x.hallId, lastActiveTimestamp: x.last_active_timestamp ?? x.lastActiveTimestamp ?? null } : null;
 const speakerToApi   = (x) => x ? { label: x.label, status: x.status, ip_address: x.ip_address ?? x.ipAddress, volume_level: x.volume_level ?? x.volume, hall_id: x.hall_id ?? x.hallId, last_active_timestamp: x.last_active_timestamp ?? x.lastActiveTimestamp ?? null } : {};
 
-const microphoneFromApi = (x) => x ? { id: String(x.id), range: x.range ?? null, sensitivity: x.sensitivity ?? null, hallId: x.hall_id ?? x.hallId, row: x.row_number ?? x.row ?? null, column: x.column_number ?? x.column ?? null, isActive: x.is_active ?? x.isActive } : null;
-const microphoneToApi   = (x) => x ? { range: x.range ?? null, sensitivity: x.sensitivity ?? null, hall_id: x.hall_id ?? x.hallId, row_number: x.row_number ?? x.row, column_number: x.column_number ?? x.column, is_active: x.is_active ?? x.isActive } : {};
-
+const microphoneToApi = (x) => x ? {
+  range: x.range ?? null,
+  sensitivity: x.sensitivity ?? null,
+  hall_id: x.hallId ?? x.hall_id,
+  row_number: x.row ?? x.row_number,
+  column_number: x.column ?? x.column_number,
+  ip_address: x.ipAddress ?? null,
+  is_active: x.isActive ?? x.is_active
+} : {};
+const microphoneFromApi = (x) => x ? {
+  id: String(x.id),
+  range: x.range ?? null,
+  sensitivity: x.sensitivity ?? null,
+  hallId: x.hall_id ?? x.hallId,
+  row: x.row_number ?? x.row ?? null,
+  column: x.column_number ?? x.column ?? null,
+  ipAddress: x.ip_address ?? x.ipAddress ?? null,
+  isActive: x.is_active ?? x.isActive
+} : null;
 const violationFromApi = (x) => x ? { id: String(x.id), type: x.type, timestamp: x.timestamp, confidence: x.confidence, hallId: x.hall_id ?? x.hallId, studentId: x.student_id ?? x.studentId, status: x.status, severity: x.severity ?? x.severity_level ?? null, examId: x.exam_id ?? x.examId ?? null, eventId: x.event_id ?? x.eventId ?? null, evidencePath: x.evidence_path ?? x.evidencePath, cameraId: x.camera_id ?? x.cameraId, micId: x.mic_id ?? x.micId,violation_id: x.violation_id ?? x.violationId } : null;
 const violationToApi   = (x) => x ? { type: x.type, timestamp: x.timestamp, confidence: x.confidence, hall_id: x.hall_id ?? x.hallId, student_id: x.student_id ?? x.studentId, status: x.status, evidence_path: x.evidence_path ?? x.evidencePath, camera_id: x.camera_id ?? x.cameraId, mic_id: x.mic_id ?? x.micId } : {};
 

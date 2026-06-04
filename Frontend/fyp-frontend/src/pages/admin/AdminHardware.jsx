@@ -60,23 +60,39 @@ export default function AdminHardware() {
 
     if (tab === "cameras") return [
       { name: "position",  label: "Position",   type: "text",   required: true },
-      { name: "ipAddress", label: "IP Address", type: "text",   required: true },
+      { name: "ip_address", label: "IP Address", type: "text",   required: true },
       { name: "model",     label: "Model",      type: "text",   required: true },
       { name: "hallId",    label: "Hall",       type: "select", required: true, options: hallOptions },
     ];
 
-    if (tab === "microphones") return [
-      { name: "range",       label: "Range",       type: "text" },
-      { name: "sensitivity", label: "Sensitivity", type: "select", options: [
-        { value: "Low", label: "Low" },
-        { value: "Medium", label: "Medium" },
-        { value: "High", label: "High" },
-      ]},
-      { name: "row",    label: "Row",    type: "number" },
-      { name: "column", label: "Column", type: "number" },
-      { name: "hallId", label: "Hall",   type: "select", required: true, options: hallOptions },
-    ];
-
+   if (tab === "microphones") return [
+  {
+    name: "ipAddress",
+    label: "Source",
+    type: "text",
+    required: true,
+  },
+  { name: "range", label: "Range", type: "text" },
+  {
+    name: "sensitivity",
+    label: "Sensitivity",
+    type: "select",
+    options: [
+      { value: "Low", label: "Low" },
+      { value: "Medium", label: "Medium" },
+      { value: "High", label: "High" },
+    ],
+  },
+  { name: "row", label: "Row", type: "number" },
+  { name: "column", label: "Column", type: "number" },
+  {
+    name: "hallId",
+    label: "Hall",
+    type: "select",
+    required: true,
+    options: hallOptions,
+  },
+];
     if (tab === "speakers") return [
       { name: "label",     label: "Label",          type: "text",   required: true },
       { name: "ipAddress", label: "IP Address",     type: "text",   required: true },
@@ -131,11 +147,12 @@ export default function AdminHardware() {
     ];
 
     if (tab === "microphones") return [
-      { header: "Range",       accessor: "range" },
-      { header: "Sensitivity", accessor: "sensitivity" },
-      { header: "Hall",        accessor: (r) => hallName(r.hallId) },
-      { header: "Row",         accessor: "row" },
-      { header: "Column",      accessor: "column" },
+  { header: "Source", accessor: "ipAddress" },
+  { header: "Range", accessor: "range" },
+  { header: "Sensitivity", accessor: "sensitivity" },
+  { header: "Hall", accessor: (r) => hallName(r.hallId) },
+  { header: "Row", accessor: "row" },
+  { header: "Column", accessor: "column" },
       { header: "Active",      accessor: (r) => (
         <StatusBadge variant={r.isActive ? "success" : "destructive"}>
           {r.isActive ? "Active" : "Inactive"}

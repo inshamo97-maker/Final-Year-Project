@@ -2,12 +2,28 @@ import cv2
 import numpy as np
 import time
 from datetime import datetime
-
+from locks import db_lock
 from recognition import app
 from load_embeddings import load_students
 from db import DB
+import uuid
+import os
 
+EVIDENCE_DIR = "evidence/images/unknown_faces"
 
+def save_unknown_snapshot(frame, student_id="unknown", exam_id="unknown"):
+    os.makedirs(EVIDENCE_DIR, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    path = os.path.join(
+        EVIDENCE_DIR,
+        f"unknown_{student_id}_{exam_id}_{ts}.jpg"
+    )
+
+    cv2.imwrite(path, frame)
+
+    return path
 def get_absent_students(exam_id, hall_id):
 
     conn = DB.get_connection()
@@ -17,7 +33,7 @@ def get_absent_students(exam_id, hall_id):
 
         print(f"[DB] Fetching absent students | exam_id={exam_id}, hall_id={hall_id}")
 
-        cur.execute(
+        with db_lock:cur.execute(
             """
             SELECT id
             FROM students
@@ -128,7 +144,7 @@ def mark_attendance(hall_id=1, exam_id=1, absent_only=False):
             print(f"[MATCH] Recognized student: {student} (ID: {student_id})")
 
             try:
-                cur.execute(
+                with db_lock:cur.execute(
                     """
                     INSERT INTO attendance
                     (
@@ -174,43 +190,66 @@ def mark_attendance(hall_id=1, exam_id=1, absent_only=False):
 
         else:
 
-            print(f"[UNKNOWN] Low confidence face detected: {confidence:.4f}")
+                print(f"[UNKNOWN] Low confidence face detected: {confidence:.4f}")
 
-            try:
-                cur.execute(
-                    """
-                    INSERT INTO ai_alerts
-                    (
-                        event_id,
-                        type,
-                        confidence,
-                        timestamp,
-                        hall_id,
-                        exam_id,
-                        student_id,
-                        violation_id,
-                        created_at
-                    )
-                    VALUES
-                    (gen_random_uuid(),%s,%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        "unknown_face",
-                        round(float(confidence), 3),
-                        now,
-                        hall_id,
-                        exam_id,
-                        None,
-                        None,
-                        now
-                    )
-                )
+                snapshot_path = save_unknown_snapshot(frame, "unknown", exam_id)
 
-                print("[DB] AI alert inserted")
+                event_id = str(uuid.uuid4())
 
-            except Exception as e:
-                print(f"[DB ERROR] Alert insert failed: {e}")
+                try:
+                    with db_lock:
+                        # 1. AI ALERT (UNCHANGED)
+                        cur.execute(
+                            """
+                            INSERT INTO ai_alerts
+                            (
+                                event_id,
+                                type,
+                                confidence,
+                                timestamp,
+                                hall_id,
+                                exam_id,
+                                student_id,
+                                violation_id,
+                                created_at
+                            )
+                            VALUES
+                            (event_id,%s,%s,%s,%s,%s,%s,%s,%s)
+                            """,
+                            (
+                                "unknown_face",
+                                round(float(confidence), 3),
+                                now,
+                                hall_id,
+                                exam_id,
+                                None,
+                                None,
+                                now
+                            )
+                        )
 
+                        # 2. EVIDENCE TABLE (NEW)
+                        cur.execute(
+                            """
+                            INSERT INTO alert_evidence
+                            (
+                                event_id,
+                                evidence_type,
+                                file_path
+                            )
+                            VALUES (%s,%s,%s)
+                            """,
+                            (
+                                event_id,
+                                "image",
+                                snapshot_path
+                            )
+                        )
+
+                    print("[DB] AI alert + evidence inserted")
+
+                except Exception as e:
+                    print(f"[DB ERROR] Alert insert failed: {e}")
     conn.commit()
     print("[DB] Transaction committed")
 

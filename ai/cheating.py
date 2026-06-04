@@ -4,8 +4,9 @@ import numpy as np
 import time
 import os
 from datetime import datetime
-
+from locks import db_lock
 from db import DB
+import uuid
 
 conn = None
 cur = None
@@ -59,7 +60,7 @@ def get_student_name(student_id):
     conn = DB.get_connection()
     cur = conn.cursor()
 
-    cur.execute(
+    with db_lock:cur.execute(
         """
         SELECT name
         FROM students
@@ -108,7 +109,7 @@ def load_seat_data(hall_id, exam_id):
     conn = DB.get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    with db_lock:cur.execute("""
         SELECT student_id, row_number, column_number
         FROM seat_allocations
         WHERE hall_id=%s AND exam_id=%s
@@ -321,36 +322,50 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                 movement_score = max(abs(yaw), abs(pitch))
                 confidence = min(1.0, movement_score / 45)
 
-                cur.execute("""
-                    INSERT INTO ai_alerts
-                    (
+                event_id = str(uuid.uuid4())  # IMPORTANT
+
+                with db_lock:
+                    cur.execute("""
+                        INSERT INTO ai_alerts
+                        (
+                            event_id,
+                            type,
+                            confidence,
+                            timestamp,
+                            hall_id,
+                            exam_id,
+                            student_id,
+                            violation_id,
+                            created_at
+                        )
+                        VALUES
+                        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (
                         event_id,
-                        type,
+                        "head_movement",
                         confidence,
-                        timestamp,
+                        now,
                         hall_id,
-                        exam_id,
-                        student_id,
-                        violation_id,
-                        created_at,
-                        evidence_path
-                    )
-                    VALUES
-                    (
-                        gen_random_uuid(),
-                        %s,%s,%s,%s,%s,%s,%s,%s,%s
-                    )
-                """, (
-                    "head_movement",
-                    confidence,
-                    now,
-                    hall_id,
-                    str(exam_id),
-                    str(student_id),
-                    None,
-                    now,
-                    snapshot_path
-                ))
+                        str(exam_id),
+                        str(student_id),
+                        None,
+                        now
+                    ))
+
+                    # OPTIONAL: store evidence safely (NO schema change needed)
+                    cur.execute("""
+                        INSERT INTO alert_evidence
+                        (
+                            event_id,
+                            evidence_type,
+                            file_path
+                        )
+                        VALUES (%s,%s,%s)
+                    """, (
+                        event_id,
+                        "image",
+                        snapshot_path
+                    ))
 
                 print(f"{student_name} cheating")
                 print(f"Snapshot saved → {snapshot_path}")
@@ -358,7 +373,6 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                 print(f"Pitch={pitch:.1f}")
 
                 last_alert_sent[student_id] = time.time()
-
         else:
             cheat_start.pop(student_id, None)
 

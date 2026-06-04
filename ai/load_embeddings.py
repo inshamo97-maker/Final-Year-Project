@@ -1,14 +1,14 @@
 import json
 import numpy as np
 from db import DB
-
+from locks import db_lock
 
 def load_students():
 
     conn = DB.get_connection()
     cur = conn.cursor()
 
-    cur.execute(
+    with db_lock:cur.execute(
         """
         SELECT
             s.id,

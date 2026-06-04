@@ -118,7 +118,7 @@ export default function InvigilatorDashboard() {
 
               <div className="live-feed-gradient aspect-video rounded-lg relative overflow-hidden border border-border/50 bg-black">
                 <img
-                  src={`${SOCKET_URL}/video-feed`}
+                   src={`${SOCKET_URL}/video-feed/${selectedHall}`} 
                   alt="Live exam hall camera"
                   className="w-full h-full object-cover"
                   onError={(e) => { e.target.style.display = "none"; }}

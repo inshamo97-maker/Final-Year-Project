@@ -1,43 +1,44 @@
 import cv2
-import sys
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+def get_camera_for_hall(hall_id):
+    # SIMPLE LOGIC (replace with DB later if needed)
+    return 0 + int(hall_id)  # or just return hall_id mapping
 
 
-BOUNDARY = "frame"
+def generate_frames(hall_id):
+    camera_index = get_camera_for_hall(hall_id)
+    cap = cv2.VideoCapture(camera_index)
 
-
-def write_frame(jpeg_bytes):
-    header = (
-        f"--{BOUNDARY}\r\n"
-        f"Content-Type: image/jpeg\r\n"
-        f"Content-Length: {len(jpeg_bytes)}\r\n\r\n"
-    ).encode("utf-8")
-    sys.stdout.buffer.write(header)
-    sys.stdout.buffer.write(jpeg_bytes)
-    sys.stdout.buffer.write(b"\r\n")
-    sys.stdout.flush()
-
-
-def main():
-    cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         return
 
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
+            ret, frame = cap.read()
+            if not ret:
                 continue
 
-            success, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
-            if not success:
-                continue
+            _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            jpeg = buffer.tobytes()
 
-            write_frame(buffer.tobytes())
-    except KeyboardInterrupt:
-        pass
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" +
+                jpeg +
+                b"\r\n"
+            )
+
     finally:
         cap.release()
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/video-feed/{hall_id}")
+def video_feed(hall_id: int):
+    return StreamingResponse(
+        generate_frames(hall_id),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )

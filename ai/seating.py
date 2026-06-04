@@ -1,6 +1,9 @@
 from datetime import datetime
 from db import DB
 from speaker_alert import trigger_alert
+import time
+from locks import db_lock
+seat_alert_cooldown = {}
 def verify_seating(
     attendance_results,
     frame_shape,
@@ -79,7 +82,7 @@ def verify_seating(
         if not expected:
             print("⚠ NOT IN SEAT MAP")
 
-            cur.execute("""
+            with db_lock:cur.execute("""
                 INSERT INTO ai_alerts
                 (
                     event_id,
@@ -112,15 +115,24 @@ def verify_seating(
 
         exp_row, exp_col = expected
 
+
         if (exp_row != detected_row or exp_col != detected_col):
 
             print("❌ SEAT VIOLATION")
-            trigger_alert(
-                roll_number=str(student_id),
-                reason="you are in the wrong seat. Please move to your correct seat",
-                exam_id=str(exam_id)
-)
-            cur.execute("""
+
+            last = seat_alert_cooldown.get(student_id, 0)
+
+            if time.time() - last > 10:
+
+                trigger_alert(
+                    roll_number=str(student_id),
+                    reason="you are sitting in the wrong seat. Please proceed to your correct seat.",
+                    exam_id=str(exam_id)
+                )
+
+                seat_alert_cooldown[student_id] = time.time()
+
+            with db_lock:cur.execute("""
                 INSERT INTO ai_alerts
                 (
                     event_id,
@@ -152,7 +164,7 @@ def verify_seating(
         else:
             print("✔ OK")
 
-            cur.execute("""
+            with db_lock:cur.execute("""
                 INSERT INTO ai_alerts
                 (
                     event_id,

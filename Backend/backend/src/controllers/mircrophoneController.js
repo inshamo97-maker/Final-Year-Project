@@ -29,14 +29,13 @@ const getMicrophoneById = async (req, res) => {
 
 const createMicrophone = async (req, res) => {
   try {
-    const { is_active, range, sensitivity, hall_id, row_number, column_number } = req.body;
-    if (!hall_id || !row_number || !column_number) {
+const { is_active, range, sensitivity, hall_id, row_number, column_number, ip_address } = req.body;    if (!hall_id || !row_number || !column_number) {
       return res.status(400).json({ error: 'hall_id, row_number, and column_number are required' });
     }
     const result = await pool.query(
-      `INSERT INTO microphones (is_active, range, sensitivity, hall_id, row_number, column_number)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [is_active ?? true, range ?? null, sensitivity ?? null, hall_id, row_number, column_number]
+      `INSERT INTO microphones (is_active, range, sensitivity, hall_id, row_number, column_number, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [is_active ?? true, range ?? null, sensitivity ?? null, hall_id, row_number, column_number,ip_address ?? null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -47,7 +46,7 @@ const createMicrophone = async (req, res) => {
 const updateMicrophone = async (req, res) => {
   try {
     const { id } = req.params;
-    const { is_active, range, sensitivity, hall_id, row_number, column_number } = req.body;
+    const { is_active, range, sensitivity, hall_id, row_number, column_number, ip_address } = req.body;
 
     const existing = await pool.query('SELECT * FROM microphones WHERE id = $1', [id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Microphone not found' });
@@ -60,8 +59,9 @@ const updateMicrophone = async (req, res) => {
         sensitivity   = $3,
         hall_id       = $4,
         row_number    = $5,
-        column_number = $6
-       WHERE id = $7 RETURNING *`,
+        column_number = $6,
+        ip_address    = $7
+       WHERE id = $8 RETURNING *`,
       [
         is_active     ?? m.is_active,
         range         ?? m.range,
@@ -69,6 +69,7 @@ const updateMicrophone = async (req, res) => {
         hall_id       ?? m.hall_id,
         row_number    ?? m.row_number,
         column_number ?? m.column_number,
+        ip_address    ?? m.ip_address,
         id
       ]
     );
@@ -120,16 +121,16 @@ const uploadMicrophonesCSV = async (req, res) => {
     .on('end', async () => {
       let inserted = 0;
       for (const row of results) {
-        const { is_active, range, sensitivity, hall_id, row_number, column_number } = row;
+        const { is_active, range, sensitivity, hall_id, row_number, column_number, ip_address } = row;
         if (!hall_id || !row_number || !column_number) {
           errors.push({ row, reason: 'Missing required fields' });
           continue;
         }
         try {
           await pool.query(
-            `INSERT INTO microphones (is_active, range, sensitivity, hall_id, row_number, column_number)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [is_active === 'true', range || null, sensitivity || null, parseInt(hall_id), parseInt(row_number), parseInt(column_number)]
+            `INSERT INTO microphones (is_active, range, sensitivity, hall_id, row_number, column_number, ip_address)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [is_active === 'true', range || null, sensitivity || null, parseInt(hall_id), parseInt(row_number), parseInt(column_number), ip_address || null]
           );
           inserted++;
         } catch (err) {
