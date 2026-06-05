@@ -63,7 +63,7 @@ async function getStudentsForInvigilator(req, res) {
       ca.exam_id IN (
         SELECT id
         FROM exams
-        WHERE status IN ('active','scheduled')
+        WHERE status IN ('running','scheduled')
       )
     )
   ORDER BY s.id ASC

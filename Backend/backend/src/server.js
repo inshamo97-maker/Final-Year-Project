@@ -2,8 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-const { spawn } = require("child_process");
-const path = require("path");
+
 const pool = require("./db");
 const { errorHandler } = require("./middleware/errorHandler");
 
@@ -142,31 +141,6 @@ io.on("connection", (socket) => {
     if (hallId == null) return;
     socket.leave(`hall:${hallId}`);
   });
-});
-
-app.get("/video-feed", (req, res) => {
-  res.writeHead(200, {
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Content-Type": "multipart/x-mixed-replace; boundary=frame",
-  });
-
-  const scriptPath = path.join(__dirname, "video_feed_stream.py");
-  const processRef = spawn("python", ["-u", scriptPath], { stdio: ["ignore", "pipe", "pipe"] });
-
-  processRef.stdout.pipe(res);
-  processRef.stderr.on("data", (chunk) => {
-    console.error(`[video-feed] ${String(chunk).trim()}`);
-  });
-  
-  const cleanup = () => {
-    if (!processRef.killed) {
-      processRef.kill();
-    }
-  };
-
-  req.on("close", cleanup);
-  processRef.on("close", cleanup);
 });
 
 // API Routes

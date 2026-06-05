@@ -60,14 +60,15 @@ def get_student_name(student_id):
     conn = DB.get_connection()
     cur = conn.cursor()
 
-    with db_lock:cur.execute(
-        """
-        SELECT name
-        FROM students
-        WHERE id=%s
-        """,
-        (student_id,)
-    )
+    with db_lock:
+        cur.execute(
+            """
+            SELECT name
+            FROM students
+            WHERE id=%s
+            """,
+            (student_id,)
+        )
 
     row = cur.fetchone()
     cur.close()
@@ -109,11 +110,12 @@ def load_seat_data(hall_id, exam_id):
     conn = DB.get_connection()
     cur = conn.cursor()
 
-    with db_lock:cur.execute("""
-        SELECT student_id, row_number, column_number
-        FROM seat_allocations
-        WHERE hall_id=%s AND exam_id=%s
-    """, (hall_id, exam_id))
+    with db_lock:
+        cur.execute("""
+            SELECT student_id, row_number, column_number
+            FROM seat_allocations
+            WHERE hall_id=%s AND exam_id=%s
+        """, (hall_id, exam_id))
 
     rows = cur.fetchall()
 
@@ -322,7 +324,7 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                 movement_score = max(abs(yaw), abs(pitch))
                 confidence = min(1.0, movement_score / 45)
 
-                event_id = str(uuid.uuid4())  # IMPORTANT
+                event_id = str(uuid.uuid4())
 
                 with db_lock:
                     cur.execute("""
@@ -338,8 +340,7 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                             violation_id,
                             created_at
                         )
-                        VALUES
-                        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """, (
                         event_id,
                         "head_movement",
@@ -352,7 +353,6 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                         now
                     ))
 
-                    # OPTIONAL: store evidence safely (NO schema change needed)
                     cur.execute("""
                         INSERT INTO alert_evidence
                         (
@@ -367,18 +367,19 @@ def detect_cheating(frame, hall_id=1, exam_id=1):
                         snapshot_path
                     ))
 
+                # FIX: commit only when an alert was actually inserted
+                conn.commit()
+
                 print(f"{student_name} cheating")
-                print(f"Snapshot saved → {snapshot_path}")
-                print(f"Yaw={yaw:.1f}")
-                print(f"Pitch={pitch:.1f}")
+                print(f"Snapshot saved -> {snapshot_path}")
+                print(f"Yaw={yaw:.1f} Pitch={pitch:.1f}")
 
                 last_alert_sent[student_id] = time.time()
+
         else:
             cheat_start.pop(student_id, None)
 
         draw_box(frame, x_min, y_min, x_max, y_max,
                  f"{student_name} | {status}", color)
-
-    conn.commit()
 
     return frame

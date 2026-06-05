@@ -7,7 +7,9 @@ from db import DB
 from threading import Thread
 from locks import db_lock
 from microphone_loader import get_microphone_device
+
 active_whisper_sessions = {}
+
 print("Loading Silero VAD...")
 
 model, utils = torch.hub.load(
@@ -31,16 +33,10 @@ last_alert_time = {}
 whisper_running = False
 
 
-# ----------------------------
-# ALERT CONTROL
-# ----------------------------
 def should_alert(mic_id):
     return time.time() - last_alert_time.get(mic_id, 0) >= ALERT_COOLDOWN
 
 
-# ----------------------------
-# STUDENTS
-# ----------------------------
 def get_candidate_students(hall_id, exam_id):
     conn = DB.get_connection()
     cur = conn.cursor()
@@ -58,9 +54,6 @@ def get_candidate_students(hall_id, exam_id):
         cur.close()
 
 
-# ----------------------------
-# ALERT CREATION
-# ----------------------------
 def create_whisper_alert(hall_id, exam_id):
     students = get_candidate_students(hall_id, exam_id)
 
@@ -88,8 +81,7 @@ def create_whisper_alert(hall_id, exam_id):
                         violation_id,
                         created_at
                     )
-                    VALUES
-                    (gen_random_uuid(), %s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES (gen_random_uuid(),%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (
                     "whisper_detected",
                     0.80,
@@ -108,9 +100,6 @@ def create_whisper_alert(hall_id, exam_id):
         cur.close()
 
 
-# ----------------------------
-# AUDIO CALLBACK
-# ----------------------------
 def audio_callback(indata, frames, time_info, status, hall_id, exam_id):
 
     audio = np.frombuffer(indata, dtype=np.int16).astype(np.float32) / 32768.0
@@ -150,15 +139,17 @@ def audio_callback(indata, frames, time_info, status, hall_id, exam_id):
                 alerted.pop(mic_id, None)
 
 
-# ----------------------------
-# ENGINE START
-# ----------------------------
 def start_whisper_detection(hall_id=1, exam_id=1):
 
     global whisper_running
+
     session_key = (hall_id, exam_id)
     active_whisper_sessions[session_key] = True
+
+    # FIX: don't block if another session already running on a different key
+    # each session is independent; whisper_running only guards the hardware stream
     if whisper_running:
+        print(f"[WHISPER] Stream already active, session {session_key} registered")
         return
 
     device = get_microphone_device(hall_id)
@@ -175,7 +166,6 @@ def start_whisper_detection(hall_id=1, exam_id=1):
         audio_callback(indata, frames, time_info, status, hall_id, exam_id)
 
     try:
-
         if device["type"] == "local":
 
             with sd.RawInputStream(
@@ -196,17 +186,27 @@ def start_whisper_detection(hall_id=1, exam_id=1):
             print("[WHISPER] Unknown device type")
 
     finally:
-        whisper_running = False
+        # FIX: only mark stream free when no sessions remain active
+        if not any(active_whisper_sessions.values()):
+            whisper_running = False
+            print("[WHISPER] All sessions ended, stream released")
+        else:
+            print("[WHISPER] Session ended, other sessions still active")
+
 
 def stop_whisper_detection(hall_id, exam_id):
-    session_key = (hall_id, exam_id)
+    global whisper_running
 
+    session_key = (hall_id, exam_id)
     active_whisper_sessions[session_key] = False
 
+    # FIX: only clear whisper_running if truly no active sessions remain
+    if not any(active_whisper_sessions.values()):
+        whisper_running = False
+
     print(f"[WHISPER] Stopped session {session_key}")
-# ----------------------------
-# SAFE WRAPPER
-# ----------------------------
+
+
 def detect_whisper(frame=None, hall_id=1, exam_id=1):
 
     Thread(

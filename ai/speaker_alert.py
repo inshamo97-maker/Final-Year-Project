@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--exam-id", default="test")
 
     args = parser.parse_args()
-
+    print(f"[ALERT] Wrong seat detected for {student_id}")
     trigger_alert(args.roll, args.reason, args.exam_id)
 
 

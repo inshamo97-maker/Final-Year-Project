@@ -34,6 +34,7 @@ function mapReport(row) {
 
 async function queryComputedReports(params = []) {
   const whereExam = params.length ? "WHERE e.id = $1" : "";
+
   const result = await db.query(
     `
     SELECT
@@ -42,44 +43,63 @@ async function queryComputedReports(params = []) {
       e.date,
       e.hall_id,
       eh.hall_number,
-      EXTRACT(EPOCH FROM ((e.date + e.end_time) - (e.date + e.start_time))) AS duration_seconds,
-      COUNT(DISTINCT v.id) AS total_violations,
-      COUNT(DISTINCT a.id) AS total_alerts,
 
-COUNT(
-  DISTINCT CASE
-    WHEN a.status IN ('confirmed','dismissed','reviewed')
-    THEN a.id
-  END
-) AS reviewed_alerts,
+      EXTRACT(EPOCH FROM ((e.date + e.end_time) - (e.date + e.start_time))) AS duration_seconds,
+
+      -- alerts strictly inside exam time window
+      (
+        SELECT COUNT(DISTINCT a.id)
+        FROM ai_alerts a
+        WHERE a.hall_id = e.hall_id
+          AND a.timestamp BETWEEN (e.date + e.start_time)
+                              AND (e.date + e.end_time)
+      ) AS total_alerts,
+
+      (
+        SELECT COUNT(DISTINCT a.id)
+        FROM ai_alerts a
+        WHERE a.hall_id = e.hall_id
+          AND a.status IN ('confirmed','dismissed','reviewed')
+          AND a.timestamp BETWEEN (e.date + e.start_time)
+                              AND (e.date + e.end_time)
+      ) AS reviewed_alerts,
+
+      -- violations strictly inside exam window
+      (
+        SELECT COUNT(DISTINCT v.id)
+        FROM violations v
+        WHERE v.hall_id = e.hall_id
+          AND v.timestamp BETWEEN (e.date + e.start_time)
+                              AND (e.date + e.end_time)
+      ) AS total_violations,
+
+      -- attendance (unchanged but safer grouped)
       COUNT(DISTINCT att.student_id) AS attendance_count,
+
       COALESCE(
         NULLIF(COUNT(DISTINCT sa.student_id), 0),
         NULLIF(COUNT(DISTINCT att.student_id), 0),
         0
       ) AS students_monitored
+
     FROM exams e
     LEFT JOIN exam_halls eh ON eh.id = e.hall_id
-    LEFT JOIN ai_alerts a
-  ON a.hall_id = e.hall_id
+
     LEFT JOIN seat_allocations sa
       ON sa.exam_id = e.id
       OR (sa.exam_id IS NULL AND sa.hall_id = e.hall_id)
-    LEFT JOIN violations v
-      ON v.hall_id = e.hall_id
-      AND v.timestamp >= (e.date + e.start_time)
-      AND v.timestamp <= (e.date + e.end_time)
 
-   LEFT JOIN attendance att
-  ON att.student_id IS NOT NULL
-  AND (
-    att.exam_id = e.id::text
-    OR (
-      att.exam_id IS NULL
-      AND att.hall_id = e.hall_id
-      AND att.date = e.date
-    )
-  )
+    LEFT JOIN attendance att
+      ON att.student_id IS NOT NULL
+      AND (
+        att.exam_id = e.id::text
+        OR (
+          att.exam_id IS NULL
+          AND att.hall_id = e.hall_id
+          AND att.date = e.date
+        )
+      )
+
     ${whereExam}
     GROUP BY e.id, e.name, e.date, e.start_time, e.end_time, e.hall_id, eh.hall_number
     ORDER BY e.date DESC, e.start_time DESC
