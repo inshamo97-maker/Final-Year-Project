@@ -4,8 +4,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const pool = require("./db");
-const { errorHandler } = require("./middleware/errorHandler");
-
+const errorMiddleware = require("./utils/errorMiddleware");
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason);
 });
@@ -160,8 +159,7 @@ app.use("/api/hall-device-map", deviceMapRoutes);
 app.use("/api", aiRoutes);
 app.use("/api", require("./routes/seatingReadRoutes"));
 app.use("/api/seat-allocation", seatAllocationRoutes);
-app.use(errorHandler);
-
+app.use(errorMiddleware);
 ensureAiTables()
   .then(ensureStudentTableCompatibility)
   .then(() => {

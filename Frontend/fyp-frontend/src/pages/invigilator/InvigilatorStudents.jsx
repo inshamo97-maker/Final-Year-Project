@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, X, User, MapPin, AlertTriangle, CheckCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DataTable } from "@/components/ui/data-table";
@@ -12,58 +12,83 @@ import { getCurrentUser } from "@/services/api";
 import * as api from "@/services/api";
 import { toast } from "sonner";
 
-// ── Shape normaliser ──────────────────────────────────────────────────────────
-// Backend returns snake_case while the UI uses camelCase.
-function normaliseStudent(s, violations = [], halls = []) {
-  const hallId   = s.hall_id ?? s.hallId ?? null;
+function normaliseStudent(s, violations = [], halls = [], activeExamId = null) {
+  const hallId   = s.hallId ?? s.hall_id ?? null;
   const hallObj  = halls.find((h) => String(h.id) === String(hallId));
   const hallName = hallObj?.hallNumber ?? s.examHall ?? "—";
+  const sid        = String(s.id ?? "");
+  const rollNumber = s.rollNumber ?? s.studentId ?? s.registrationNumber ?? sid;
 
-  // Count violations for this student
-  const sid        = String(s.id ?? s.studentId ?? "");
-  const rollNumber = s.roll_number ?? s.rollNumber ?? s.registration_number ?? s.studentId ?? sid;
-  const alertCount = violations.filter(
-    (v) => String(v.student_id ?? v.studentId) === sid ||
-           String(v.student_id ?? v.studentId) === rollNumber
-  ).length;
+  const alertCount = violations.filter((v) => {
+    const matchStudent =
+      String(v.studentId ?? v.student_id) === sid ||
+      String(v.studentId ?? v.student_id) === rollNumber;
+    const matchExam = activeExamId
+      ? String(v.examId ?? v.exam_id) === String(activeExamId)
+      : true;
+    return matchStudent && matchExam;
+  }).length;
 
   return {
-    id:          sid,
-    studentId:   rollNumber,
-    name:        s.name ?? "Unknown",
-    seatNumber:  s.seat_number ?? s.seatNumber ?? "—",
-    examHall:    hallName,
+    id:                 sid,
+    studentId:          rollNumber,
+    name:               s.name ?? "Unknown",
+    seatNumber:         s.seatNumber ?? s.seat_number ?? "—",
+    examHall:           hallName,
     hallId,
-    status:      alertCount > 0 ? "Flagged" : "Normal",
+    status:             alertCount > 0 ? "Flagged" : "Normal",
     alertCount,
-    email:       s.email ?? "—",
-    department:  s.department ?? "—",
-    registrationNumber: s.registration_number ?? s.registrationNumber ?? rollNumber,
+    email:              s.email ?? "—",
+    department:         s.programName ?? s.department ?? "—",
+    registrationNumber: s.registrationNumber ?? rollNumber,
   };
 }
 
 export default function InvigilatorStudents() {
   const user = getCurrentUser() || { name: "Invigilator", id: "inv", role: "invigilator" };
 
-  const [students, setStudents]       = useState([]);
-  const [halls, setHalls]             = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-
+const [rawStudents, setRawStudents]         = useState([]);
+const [violations, setViolations]           = useState([]);
+const [halls, setHalls]                     = useState([]);
+const [exams, setExams]                     = useState([]);
+  const [loading, setLoading]                 = useState(true);
+  const [searchQuery, setSearchQuery]         = useState("");
+  const [statusFilter, setStatusFilter]       = useState("all");
+  const [selectedExam, setSelectedExam]       = useState("all");
+  const [attendanceMap, setAttendanceMap]     = useState({});
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+const activeExamFilter = selectedExam !== "all" ? selectedExam : null;
 
-  // ── Load data ───────────────────────────────────────────────────────────────
+const students = useMemo(
+  () => rawStudents.map((s) => normaliseStudent(s, violations, halls, activeExamFilter)),
+  [rawStudents, violations, halls, activeExamFilter]
+);
+  // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const [raw, viols, hallList] = await Promise.all([
+        const [rawRes, violsRes, hallsRes, examsRes] = await Promise.allSettled([
           api.getStudentList(),
           api.getViolations(),
           api.getExamHalls(),
+          api.getExams(),
         ]);
-        setHalls(hallList);
-        setStudents((raw || []).map((s) => normaliseStudent(s, viols, hallList)));
+
+        console.log("students:", rawRes.status, rawRes.value || rawRes.reason);
+        console.log("viols:",    violsRes.status, violsRes.reason || "ok");
+        console.log("halls:",    hallsRes.status, hallsRes.reason || "ok");
+        console.log("exams:",    examsRes.status, examsRes.reason || "ok");
+
+        const raw      = rawRes.status    === "fulfilled" ? rawRes.value   || [] : [];
+        const viols    = violsRes.status  === "fulfilled" ? violsRes.value || [] : [];
+        const hallList = hallsRes.status  === "fulfilled" ? hallsRes.value || [] : [];
+        const examList = examsRes.status  === "fulfilled" ? examsRes.value || [] : [];
+
+       setHalls(hallList);
+setExams(examList);
+setViolations(viols);
+setRawStudents(raw);
       } catch (e) {
         toast.error(e?.message || "Failed to load students");
       } finally {
@@ -72,9 +97,32 @@ export default function InvigilatorStudents() {
     })();
   }, []);
 
-  // ── Unique hall names for filter dropdown ───────────────────────────────────
+  // ── Fetch attendance when exam selected ──────────────────────────────────
+  useEffect(() => {
+    if (!selectedExam || selectedExam === "all") {
+      setAttendanceMap({});
+      return;
+    }
+    (async () => {
+      setAttendanceLoading(true);
+      try {
+        const rows = await api.getAttendanceByExam(selectedExam);
+        const list = Array.isArray(rows) ? rows : [];
+        const presentIds = new Set(list.map((r) => String(r.student_id)));
+        const map = {};
+        students.forEach((s) => {
+          map[s.id] = presentIds.has(s.id) ? "Present" : "Absent";
+        });
+        setAttendanceMap(map);
+      } catch (e) {
+        toast.error("Failed to load attendance");
+      } finally {
+        setAttendanceLoading(false);
+      }
+    })();
+  }, [selectedExam, students]);
 
-  // ── Filtered list ───────────────────────────────────────────────────────────
+  // ── Filter logic ──────────────────────────────────────────────────────────
   const filtered = students.filter((s) => {
     const q = searchQuery.toLowerCase();
     const matchSearch = !q ||
@@ -86,34 +134,45 @@ export default function InvigilatorStudents() {
   });
 
   const clearFilters = () => {
-  setSearchQuery("");
-setStatusFilter("all");
+    setSearchQuery("");
+    setStatusFilter("all");
+    setSelectedExam("all");
   };
 
-const hasFilters = statusFilter !== "all" || searchQuery;
-  // ── Columns ─────────────────────────────────────────────────────────────────
+  const hasFilters = statusFilter !== "all" || searchQuery || selectedExam !== "all";
+
+  // ── Columns ───────────────────────────────────────────────────────────────
   const columns = [
-    { header: "Roll No",   accessor: "studentId"  },
-    { header: "Name",      accessor: "name"        },
-    { header: "Seat",      accessor: "seatNumber"  },
-    { header: "Hall",      accessor: "examHall"    },
-    { header: "Status",    accessor: (r) => (
+    { header: "Roll No",    accessor: "studentId" },
+    { header: "Name",       accessor: "name"       },
+    { header: "Seat",       accessor: "seatNumber" },
+    { header: "Hall",       accessor: "examHall"   },
+    { header: "Status",     accessor: (r) => (
       <StatusBadge variant={r.status === "Flagged" ? "destructive" : "success"}>
         {r.status}
       </StatusBadge>
     )},
-    { header: "Alerts",    accessor: (r) => r.alertCount > 0
+    { header: "Alerts",     accessor: (r) => r.alertCount > 0
       ? <span className="text-destructive font-medium">{r.alertCount}</span>
       : <span className="text-muted-foreground">0</span>
     },
+    { header: "Attendance", accessor: (r) => {
+      if (selectedExam === "all")  return <span className="text-muted-foreground text-xs">Select exam</span>;
+      if (attendanceLoading)       return <span className="text-muted-foreground text-xs">...</span>;
+      const att = attendanceMap[r.id];
+      return (
+        <StatusBadge variant={att === "Present" ? "success" : "destructive"}>
+          {att ?? "—"}
+        </StatusBadge>
+      );
+    }},
   ];
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout userRole={user.role} userName={user.name} userId={user.id} pageTitle="Student List">
       <div className="space-y-4 sm:space-y-6 animate-fade-in">
 
-        {/* Search + filters */}
         <div className="flex flex-col gap-3">
           <div className="relative w-full sm:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -126,16 +185,30 @@ const hasFilters = statusFilter !== "all" || searchQuery;
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Select value={selectedExam} onValueChange={setSelectedExam}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Select Exam" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Exams</SelectItem>
+                {exams.map((e) => (
+                  <SelectItem key={e.id} value={String(e.id)}>
+                    {e.name} — {e.subject}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="Normal">Normal</SelectItem>
                 <SelectItem value="Flagged">Flagged</SelectItem>
               </SelectContent>
             </Select>
-
-        
 
             {hasFilters && (
               <Button variant="ghost" size="icon" onClick={clearFilters}>
@@ -154,6 +227,12 @@ const hasFilters = statusFilter !== "all" || searchQuery;
                   · {students.filter((s) => s.status === "Flagged").length} flagged
                 </span>
               )}
+              {selectedExam !== "all" && !attendanceLoading && (
+                <span className="ml-2 text-muted-foreground">
+                  · {Object.values(attendanceMap).filter((v) => v === "Present").length} present
+                  · {Object.values(attendanceMap).filter((v) => v === "Absent").length} absent
+                </span>
+              )}
             </p>
 
             <DataTable
@@ -166,7 +245,6 @@ const hasFilters = statusFilter !== "all" || searchQuery;
         )}
       </div>
 
-      {/* Student detail sheet */}
       <Sheet open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
         <SheetContent className="sm:max-w-md">
           <SheetHeader><SheetTitle>Student Details</SheetTitle></SheetHeader>
@@ -201,6 +279,17 @@ const hasFilters = statusFilter !== "all" || searchQuery;
                     <p className="font-medium">{selectedStudent.examHall}</p>
                   </div>
                 </div>
+
+                {selectedExam !== "all" && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Attendance</p>
+                    <StatusBadge
+                      variant={attendanceMap[selectedStudent.id] === "Present" ? "success" : "destructive"}
+                    >
+                      {attendanceMap[selectedStudent.id] ?? "—"}
+                    </StatusBadge>
+                  </div>
+                )}
 
                 {selectedStudent.email !== "—" && (
                   <div className="p-3 bg-muted/50 rounded-lg">

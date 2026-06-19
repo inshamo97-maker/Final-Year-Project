@@ -88,7 +88,7 @@ export default function InvigilatorDashboard() {
   }, []);
 
   const hallName = (id) => halls.find((h) => String(h.id) === String(id))?.hallNumber || id || "—";
-
+  const FASTAPI_URL = import.meta.env.VITE_FASTAPI_URL || "http://localhost:8000";
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout userRole={user.role} userName={user.name} userId={user.id} pageTitle="Dashboard">
@@ -118,7 +118,7 @@ export default function InvigilatorDashboard() {
 
               <div className="live-feed-gradient aspect-video rounded-lg relative overflow-hidden border border-border/50 bg-black">
                 <img
-                   src={`${SOCKET_URL}/video-feed/${selectedHall}`} 
+                  src={`${FASTAPI_URL}/stream/${selectedHall}`}                  
                   alt="Live exam hall camera"
                   className="w-full h-full object-cover"
                   onError={(e) => { e.target.style.display = "none"; }}
@@ -128,7 +128,7 @@ export default function InvigilatorDashboard() {
                   <div className="text-center text-muted-foreground/60 px-4">
                     <Video className="h-10 w-10 sm:h-16 sm:w-16 mx-auto mb-2 sm:mb-4 opacity-40" />
                     <p className="text-sm sm:text-lg font-medium">LIVE FEED</p>
-                    <p className="text-xs sm:text-sm">Start the Python camera service to stream</p>
+                    <p className="text-xs sm:text-sm">waiting for exam to start</p>
                   </div>
                 </div>
                 {/* Grid overlay */}

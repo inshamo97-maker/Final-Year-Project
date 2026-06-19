@@ -12,7 +12,6 @@ const {
   updateExam,
   deleteExam,
   uploadExamCSV,
-  checkAndUpdateExamStatuses,
 } = require("../controllers/examController");
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -20,7 +19,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.use(authenticate);
 
 router.get("/", getAllExams);                                    // GET    /api/exams
-router.get("/status/update", checkAndUpdateExamStatuses);       // GET    /api/exams/status/update
 router.get("/:id", getExamById);                                // GET    /api/exams/:id
 router.post("/", isAdmin, createExam);                                   // POST   /api/exams
 router.put("/:id", isAdmin, updateExam);                                 // PUT    /api/exams/:id

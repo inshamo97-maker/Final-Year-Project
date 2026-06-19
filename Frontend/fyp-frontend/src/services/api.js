@@ -284,9 +284,7 @@ export const updateExam   = makeCrudApi(examsCrud.update, () => async (id, p) =>
 export const deleteExam   = makeCrudApi(examsCrud.remove, () => async (id) => { await request(`/exams/${id}`, { method: "DELETE" }); return { success: true }; });
 export const uploadExamsCsv = makeCrudApi(examsCrud.uploadCsv, () => async (file) => { const fd = new FormData(); fd.append("file", file); return request("/exams/upload/csv", { method: "POST", formData: fd }); });
 
-export async function refreshExamStatuses() {
-  return request("/exams/status/update");
-}
+
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Hardware: Cameras, Speakers, Microphones
@@ -376,7 +374,13 @@ export async function getExamHallOptions() {
 
 export async function getStudentList() {
   const data = await request("/students");
-  return (Array.isArray(data) ? data : []).map(studentFromApi);
+  const list =
+  Array.isArray(data) ? data :
+  Array.isArray(data?.students) ? data.students :
+  Array.isArray(data?.data) ? data.data :
+  [];
+
+return list.map(studentFromApi);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -439,7 +443,7 @@ export async function getInvigilatorDashboardStats() {
     totalStudents:        studentList.length,
     activeAlerts:         alertList.filter((a) => a.status === "pending").length,
     examHalls:            hallList.length,
-    activeExamsInMyHalls: examList.filter((e)  => e.status === "active").length,
+    activeExamsInMyHalls: examList.filter((e)  => e.status === "running").length,
   };
 }
 
@@ -461,17 +465,19 @@ export async function getCurrentSession() {
 
   const isValid = (d) => d instanceof Date && !isNaN(d);
 
-  const data = await request("/exams");
-  const examList = ((data?.exams || data) ?? []).map(examFromApi);
-  const active = examList.find((e) => e.status === "active");
+  const [examData, studentData] = await Promise.all([
+    request("/exams"),
+    request("/students"),
+  ]);
+
+  const examList    = ((examData?.exams || examData) ?? []).map(examFromApi);
+  const studentList = Array.isArray(studentData) ? studentData : [];
+
+  // FIX: was "active", DB uses "running"
+  const active = examList.find((e) => e.status === "running");
 
   if (!active) {
-    return {
-      examName: "No active exam",
-      duration: "—",
-      timeLeft: "—",
-      students: "—"
-    };
+    return { examName: "No active exam", duration: "—", timeLeft: "—", students: "—" };
   }
 
   const start = active.startTime && active.date
@@ -491,18 +497,23 @@ export async function getCurrentSession() {
 
   const timeLeft =
     end && isValid(end)
-      ? end > now
-        ? fmtMins(end - now)
-        : "Ended"
+      ? end > now ? fmtMins(end - now) : "Ended"
       : "—";
+
+  // count students assigned to this exam's hall
+  const hallStudents = studentList.filter(
+    s => String(s.hall_id ?? s.hallId) === String(active.hallId)
+  ).length;
 
   return {
     examName: `${active.name} — ${active.subject}`,
     duration,
     timeLeft,
-    students: "—"
+    students: hallStudents > 0 ? String(hallStudents) : "—",
   };
 }
+
+
 
 // Reports
 export async function getReports() {
@@ -570,66 +581,36 @@ export async function getInvigilatorHallDetails() {
     request("/students"),
   ]);
 
-  const halls = (hallsRes.status === "fulfilled" ? (hallsRes.value?.exam_halls || hallsRes.value || []) : []);
-  const cameras = (camerasRes.status === "fulfilled" ? (camerasRes.value?.cameras || camerasRes.value || []) : []);
-  const alerts = (alertsRes.status === "fulfilled" ? (alertsRes.value?.alerts || alertsRes.value || []) : []);
-  const students = (studentsRes.status === "fulfilled" ? (studentsRes.value || []) : []);
+  const halls =
+    hallsRes.status === "fulfilled"
+      ? hallsRes.value?.exam_halls || hallsRes.value || []
+      : [];
+
+  const cameras =
+    camerasRes.status === "fulfilled"
+      ? camerasRes.value?.cameras || camerasRes.value || []
+      : [];
+
+  const alerts =
+    alertsRes.status === "fulfilled"
+      ? alertsRes.value?.alerts || alertsRes.value || []
+      : [];
+
+  const students =
+    studentsRes.status === "fulfilled" ? studentsRes.value || [] : [];
+
   return halls.map((hall) => {
-const hallCameras = cameras.filter(
-  c => String(c.hall_id ?? c.hallId) === String(hall.id)
-);
-    const hallAlerts = alerts.filter(a => String(a.hallId) === String(hall.id));
-
-    const hallStudents = students.filter(s =>
-      String(s.hall_id ?? s.hallId) === String(hall.id)
+    const hallCameras = cameras.filter(
+      (c) => String(c.hall_id ?? c.hallId) === String(hall.id)
     );
 
-    const rows = Number(hall.rows || hall.rowCount || 0);
-    const cols = Number(hall.cols || hall.colCount || 0);
-
-    const maxRow = rows || Math.max(0, ...hallStudents.map(s => Number(s.row_number || s.rowNumber || 0)));
-    const maxCol = cols || Math.max(0, ...hallStudents.map(s => Number(s.column_number || s.columnNumber || 0)));
-
-    const seating = Array.from({ length: maxRow }, () =>
-      Array.from({ length: maxCol }, () => ({
-        status: "empty",
-        student: null,
-        alert: null,
-      }))
+    const hallAlerts = alerts.filter(
+      (a) => String(a.hallId) === String(hall.id)
     );
 
-    hallStudents.forEach((student) => {
-      const rowIndex = Number(student.row_number ?? student.rowNumber) - 1;
-      const colIndex = Number(student.column_number ?? student.columnNumber) - 1;
-
-      if (rowIndex < 0 || colIndex < 0) return;
-      if (!seating[rowIndex]?.[colIndex]) return;
-
-      const studentAlerts = hallAlerts.filter(a =>
-        String(a.student_id ?? a.studentId) === String(student.id)
-      );
-
-      const pending = studentAlerts.find(a => a.status === "pending") || null;
-
-      seating[rowIndex][colIndex] = {
-        status: pending ? "flagged" : "occupied",
-        student: {
-          id: student.id,
-          name: student.name || "",
-          rollNumber: student.roll_number || student.registration_number || "",
-          department: student.program_name || "",
-          email: student.email || "",
-        },
-        alert: pending
-          ? {
-              id: pending.id,
-              alertType: pending.violation_type || pending.alertType,
-              time: pending.timestamp,
-              status: pending.status,
-            }
-          : null,
-      };
-    });
+    const hallStudents = students.filter(
+      (s) => String(s.hall_id ?? s.hallId) === String(hall.id)
+    );
 
     return {
       id: hall.id,
@@ -637,19 +618,98 @@ const hallCameras = cameras.filter(
       totalStudents: hallStudents.length,
       capacity: hall.capacity || 0,
       activeCameras: hallCameras.filter(
-  c => c.is_active ?? c.isActive
-).length,
-      currentAlerts: hallAlerts.filter(a => a.status === "pending").length,
-      seating,
-      cameras: hallCameras.map(c => ({
+        (c) => c.is_active ?? c.isActive
+      ).length,
+      currentAlerts: hallAlerts.filter((a) => a.status === "pending").length,
+
+      // ❌ seating REMOVED
+
+      cameras: hallCameras.map((c) => ({
         id: c.id,
         name: c.position || "Camera",
-        status: (c.is_active ?? c.isActive)
-  ? "active"
-  : "inactive",
+        status: (c.is_active ?? c.isActive) ? "active" : "inactive",
       })),
     };
   });
+}
+export async function getSeatAllocationsByExam(hallId, examId) {
+  const [studentsRes, alertsRes, hallRes] = await Promise.allSettled([
+    request(`/students?hallId=${hallId}`),
+    request(`/ai-alerts?hallId=${hallId}${examId ? `&examId=${examId}` : ""}`),
+    request(`/examhalls/${hallId}`),
+  ]);
+
+  const students =
+    studentsRes.status === "fulfilled" ? studentsRes.value || [] : [];
+
+  const alerts =
+    alertsRes.status === "fulfilled"
+      ? alertsRes.value?.alerts || alertsRes.value || []
+      : [];
+
+  const hall =
+    hallRes.status === "fulfilled" ? hallRes.value?.exam_hall || hallRes.value || {} : {};
+
+  const rows = Number(hall.rows || hall.rowCount || 0);
+  const cols = Number(hall.cols || hall.colCount || 0);
+
+  const studentList = Array.isArray(students)
+    ? students
+    : students?.students || [];
+
+  const maxRow =
+    rows ||
+    Math.max(0, ...studentList.map((s) => Number(s.row_number || s.rowNumber || 0)));
+
+  const maxCol =
+    cols ||
+    Math.max(0, ...studentList.map((s) => Number(s.column_number || s.columnNumber || 0)));
+
+  if (maxRow === 0 || maxCol === 0) return [];
+
+  const seating = Array.from({ length: maxRow }, () =>
+    Array.from({ length: maxCol }, () => ({
+      status: "empty",
+      student: null,
+      alert: null,
+    }))
+  );
+
+  studentList.forEach((student) => {
+    const rowIndex = Number(student.row_number ?? student.rowNumber) - 1;
+    const colIndex = Number(student.column_number ?? student.columnNumber) - 1;
+
+    if (rowIndex < 0 || colIndex < 0) return;
+    if (!seating[rowIndex]?.[colIndex]) return;
+
+    const studentAlerts = alerts.filter(
+      (a) => String(a.student_id ?? a.studentId) === String(student.id)
+    );
+
+    const pending =
+      studentAlerts.find((a) => a.status === "pending") || null;
+
+    seating[rowIndex][colIndex] = {
+      status: pending ? "flagged" : "occupied",
+      student: {
+        id: student.id,
+        name: student.name || "",
+        rollNumber: student.roll_number || student.registration_number || "",
+        department: student.program_name || "",
+        email: student.email || "",
+      },
+      alert: pending
+        ? {
+            id: pending.id,
+            alertType: pending.violation_type || pending.type || pending.alertType,
+            time: pending.timestamp,
+            status: pending.status,
+          }
+        : null,
+    };
+  });
+
+  return seating;
 }
 // ───────────────────────────────────────────────────────────────────────────────
 // Admin Exam Halls
@@ -788,7 +848,9 @@ export async function deleteStudent(id) {
     }
   );
 }
-
+export async function getAttendanceByExam(examId) {
+  return request(`/attendance?exam_id=${examId}`);
+}
 
 
 export async function uploadSeatAllocationsCsv(file) {

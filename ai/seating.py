@@ -241,7 +241,6 @@ def verify_seating(
                     now
                 ))
 
-    # ← 4 spaces (same level as "for student in attendance_results")
     # -------------------------
     # CASE 4: absent students
     # (allocated but not detected)
@@ -258,11 +257,11 @@ def verify_seating(
 
         with db_lock:
             cur.execute("""
-                INSERT INTO attendance (student_id, exam_id, hall_id, status, marked_at)
-                VALUES (%s, %s, %s, 'absent', %s)
+                INSERT INTO attendance (student_id, exam_id, hall_id, status)
+                VALUES (%s, %s, %s, 'absent')
                 ON CONFLICT (student_id, exam_id)
                 DO NOTHING
-            """, (student_id, exam_id, hall_id, now))
+            """, (student_id, exam_id, hall_id))
 
             cur.execute("""
                 INSERT INTO ai_alerts
@@ -280,7 +279,6 @@ def verify_seating(
                 now
             ))
 
-    # ← 4 spaces
     conn.commit()
     cur.close()
 
